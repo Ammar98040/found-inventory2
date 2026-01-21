@@ -40,6 +40,11 @@ const STORAGE_TIMESTAMP_KEY = 'inventory_save_timestamp';
 // متغير للحفظ التلقائي
 let autoSaveTimeout = null;
 
+const selectAllBtn = document.getElementById('select-all-btn');
+if (selectAllBtn) {
+    selectAllBtn.addEventListener('change', toggleSelectAll);
+}
+
 // استمع للأحداث
 searchBtn.addEventListener('click', handleSearch);
 clearBtn.addEventListener('click', handleClear);
@@ -196,6 +201,16 @@ function showWarning(duplicates) {
 
 // عرض النتائج
 function displayResults(results) {
+    // إعادة تعيين خانة تحديد الكل
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (selectAllBtn) {
+        selectAllBtn.checked = false;
+    }
+    
+    // إعادة تعيين المنتجات المحددة
+    selectedProducts = [];
+    updateConfirmButton();
+
     resultsContainer.innerHTML = '';
     
     if (results.length === 0) {
@@ -766,6 +781,81 @@ function handleClear() {
     hideError();
 }
 
+// تبديل تحديد الكل
+function toggleSelectAll() {
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (!selectAllBtn) return;
+    
+    const isChecked = selectAllBtn.checked;
+    
+    // في حالة إلغاء التحديد، قم بإلغاء كل شيء مباشرة
+    if (!isChecked) {
+        currentResults.forEach((product, index) => {
+            const checkbox = document.getElementById(`product-${index}`);
+            if (checkbox && checkbox.checked) {
+                checkbox.checked = false;
+                selectedProducts = selectedProducts.filter(p => p.number !== product.product_number);
+            }
+        });
+        updateConfirmButton();
+        return;
+    }
+
+    // قوائم للمنتجات التي بها مشاكل
+    let notFoundProducts = [];
+    let outOfStockProducts = [];
+    
+    // فحص جميع المنتجات أولاً
+    currentResults.forEach((product) => {
+        if (!product.found) {
+            notFoundProducts.push(product.product_number);
+        } else if (!product.quantity || product.quantity <= 0) {
+            outOfStockProducts.push(product.product_number);
+        }
+    });
+    
+    // إذا وجد أي خطأ، امنع التحديد كلياً واعرض رسالة
+    if (notFoundProducts.length > 0 || outOfStockProducts.length > 0) {
+        // إلغاء تحديد خانة "تحديد الكل"
+        selectAllBtn.checked = false;
+        
+        let message = '⚠️ لا يمكن تحديد الكل لوجود مشاكل في بعض المنتجات:\n\n';
+        
+        if (outOfStockProducts.length > 0) {
+            message += '❌ المنتجات التالية غير متوفرة (الكمية 0):\n';
+            message += outOfStockProducts.join(', ') + '\n\n';
+        }
+        
+        if (notFoundProducts.length > 0) {
+            message += '🔍 المنتجات التالية غير موجودة في النظام:\n';
+            message += notFoundProducts.join(', ') + '\n';
+        }
+        
+        message += '\nالرجاء معالجة هذه المنتجات أو تحديد المنتجات الصالحة يدوياً.';
+        alert(message);
+        return;
+    }
+    
+    // إذا كانت جميع المنتجات سليمة، قم بتحديدها
+    currentResults.forEach((product, index) => {
+        const checkbox = document.getElementById(`product-${index}`);
+        if (!checkbox) return;
+        
+        if (!checkbox.checked) {
+            checkbox.checked = true;
+            if (!selectedProducts.find(p => p.number === product.product_number)) {
+                selectedProducts.push({
+                    number: product.product_number,
+                    quantity: product.requested_quantity || 0,
+                    index: index
+                });
+            }
+        }
+    });
+    
+    updateConfirmButton();
+}
+
 // معالجة تحديد المنتجات
 let selectedProducts = [];
 
@@ -785,6 +875,26 @@ function handleProductCheck(index, productNumber, availableQuantity, requestedQu
     } else {
         // إزالة المنتج من المحددة
         selectedProducts = selectedProducts.filter(p => p.number !== productNumber);
+    }
+    
+    // مزامنة حالة زر تحديد الكل
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (selectAllBtn) {
+        if (!isChecked) {
+             selectAllBtn.checked = false;
+        } else {
+            // التحقق مما إذا تم تحديد جميع المنتجات الصالحة
+            const allValidSelected = currentResults.every((p, idx) => {
+                if (!p.found || p.quantity <= 0) return true; // تجاهل غير الصالحة
+                const cb = document.getElementById(`product-${idx}`);
+                return cb && cb.checked;
+            });
+            // يجب أن يكون هناك على الأقل منتج واحد صالح ومحدد لتفعيل تحديد الكل
+            const hasValidProducts = currentResults.some(p => p.found && p.quantity > 0);
+            if (allValidSelected && hasValidProducts) {
+                selectAllBtn.checked = true;
+            }
+        }
     }
     
     updateConfirmButton();

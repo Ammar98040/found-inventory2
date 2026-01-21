@@ -11,6 +11,7 @@ from django.db import models as db_models
 from .models import Product, Location, Warehouse, AuditLog, Order, ProductReturn, UserProfile, UserActivityLog, Container, SecureBackup
 from .decorators import admin_required, staff_required, exclude_maintenance, exclude_admin_dashboard, get_user_type, is_admin
 from .forms import LoginForm, RegisterStaffForm, ProductForm, EditStaffForm
+from .ocr_service import analyze_invoice_image
 import json
 import logging
 from django.core import serializers
@@ -410,6 +411,30 @@ def compact_row(request):
         return JsonResponse({'success': False, 'error': 'بيانات غير صالحة'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'حدث خطأ: {str(e)}'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def analyze_image_view(request):
+    try:
+        if 'image' not in request.FILES:
+            return JsonResponse({'success': False, 'error': 'No image provided'}, status=400)
+            
+        image_file = request.FILES['image']
+        
+        # Call the OCR service
+        result = analyze_invoice_image(image_file)
+        
+        if isinstance(result, list):
+            return JsonResponse({'success': True, 'data': {'products': result}})
+        elif isinstance(result, dict) and 'error' in result:
+            return JsonResponse({'success': False, 'error': result['error']}, status=500)
+        else:
+            return JsonResponse({'success': False, 'error': 'Failed to analyze image'}, status=500)
+            
+    except Exception as e:
+        logger.error(f"Error in analyze_image_view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @require_http_methods(["POST"])
@@ -3546,7 +3571,7 @@ def custom_logout(request):
 @admin_required
 @never_cache
 @require_http_methods(["GET", "POST"])
-@ratelimit(key='user', rate='10/h', method='POST', block=True) if RATELIMIT_AVAILABLE else lambda x: x
+@ratelimit(key='user', rate='100/h', method='POST', block=True) if RATELIMIT_AVAILABLE else lambda x: x
 def register_staff(request):
     """إنشاء حساب موظف جديد - للمسؤول فقط مع تحسينات الأمان"""
     if request.method == 'POST':

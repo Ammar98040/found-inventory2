@@ -6,6 +6,7 @@ app_name = 'inventory_app'
 urlpatterns = [
     path('', views.home, name='home'),
     path('api/search/', views.search_products, name='search_products'),
+    path('api/analyze-image/', views.analyze_image_view, name='analyze_image'),
     path('api/confirm-products/', views.confirm_products, name='confirm_products'),
     path('api/products/', views.get_products_list, name='products_list'),
     path('api/get-stats/', views.get_stats, name='get_stats'),

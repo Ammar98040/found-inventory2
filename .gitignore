@@ -37,6 +37,7 @@ logs/
 *.sql
 *.dump
 *.sqlite3
+*.backup
 
 # Files to NOT upload
 LOGIN_INFO.txt
