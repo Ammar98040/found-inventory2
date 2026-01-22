@@ -720,6 +720,7 @@ COPY public.auth_permission (id, name, content_type_id, codename) FROM stdin;
 
 COPY public.auth_user (id, password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined) FROM stdin;
 1	pbkdf2_sha256$600000$XHi62Qq6usiDdgSEk5IsXA$tby6GrdDo2KfyVWCCANtw8BzlSCmYWdVZ5bDiSv3yfs=	\N	t	Ammar			admin@example.com	t	t	2026-01-21 03:27:15.816925+02
+2	pbkdf2_sha256$600000$Ab41eiXLeVFJqjzELrD8ro$uHqjEM4TUkOxQ2SYppc+1MjyXpLgVDEbEO2Y/6if8Lw=	\N	t	Ammar2			admin2@example.com	t	t	2026-01-23 00:02:16.769782+02
 \.
 
 
@@ -949,7 +950,7 @@ SELECT pg_catalog.setval('public.auth_user_groups_id_seq', 1, false);
 -- Name: auth_user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.auth_user_id_seq', 1, true);
+SELECT pg_catalog.setval('public.auth_user_id_seq', 2, true);
 
 
 --
