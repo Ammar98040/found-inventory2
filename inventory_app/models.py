@@ -50,7 +50,7 @@ class Product(models.Model):
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, blank=True, null=True, related_name='products')
 
     image = models.ImageField(upload_to='products/', blank=True, null=True)
-    container = models.ForeignKey(Container, on_delete=models.SET_NULL, blank=True, null=True)
+    container = models.ForeignKey(Container, on_delete=models.SET_NULL, blank=True, null=True, related_name='products')
     barcode = models.CharField(max_length=100, blank=True, null=True)
     image_url = models.CharField(max_length=500, blank=True, null=True)
     min_stock_threshold = models.IntegerField(default=0)

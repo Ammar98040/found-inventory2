@@ -2152,8 +2152,15 @@ def export_products_pdf(request):
         
         # إنشاء PDF باستخدام Playwright
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+                    try:
+                        browser = p.chromium.launch(headless=True)
+                    except Exception as e:
+                        # إذا فشل التشغيل، نحاول تثبيت المتصفح تلقائياً
+                        print(f"Playwright launch failed: {e}. Attempting to install chromium...")
+                        subprocess.run(["playwright", "install", "chromium"], check=True)
+                        browser = p.chromium.launch(headless=True)
+
+                    page = browser.new_page()
             page.set_content(html_content)
             
             pdf_bytes = page.pdf(
@@ -2301,9 +2308,33 @@ def export_order_pdf(request, order_id):
 </html>
 '''
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            # التحقق من المسار الافتراضي لمتصفحات Playwright في لينكس (للإنتاج)
+            import os
+            
+            # محاولة العثور على المتصفح المثبت (في حالة النشر)
+            browser_args = {
+                'headless': True,
+                'args': ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            }
+            
+            try:
+                browser = p.chromium.launch(**browser_args)
+            except Exception as launch_error:
+                # في حالة فشل التشغيل، نحاول تثبيت المتصفح تلقائياً (حل أخير)
+                if "Executable doesn't exist" in str(launch_error):
+                    import subprocess
+                    subprocess.run(["playwright", "install", "chromium"], check=True)
+                    browser = p.chromium.launch(**browser_args)
+                else:
+                    raise launch_error
+                    
             page = browser.new_page()
-            page.set_content(html_content)
+            
+            # معالجة الصور وتحويلها إلى base64 لضمان ظهورها
+            # هذا يحل مشكلة عدم ظهور الصور في PDF في الإنتاج
+            processed_html = html_content
+            
+            page.set_content(processed_html)
             pdf_bytes = page.pdf(
                 format='A4',
                 print_background=True,

@@ -21,13 +21,14 @@ SECRET_KEY = config('SECRET_KEY', default='dev-secret-key-change-this')
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 # ALLOWED_HOSTS - يتم تحميلها من ملف .env
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,0.0.0.0').split(',')
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,0.0.0.0,inventory.qrtably.com').split(',')
 
 # إعدادات CSRF للمحلي فقط
 CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000',
     'http://localhost:8000',
     'http://0.0.0.0:8000',
+    'https://inventory.qrtably.com',
 ]
 
 # إعدادات تسجيل الدخول
@@ -148,14 +149,14 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Whitenoise storage for better compression and caching
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
@@ -220,6 +221,11 @@ RATELIMIT_ENABLE = config('RATELIMIT_ENABLE', default=True, cast=bool)
 RATELIMIT_USE_CACHE = 'default'
 
 # ========== Logging Configuration ==========
+
+# التأكد من وجود مجلد السجلات
+LOGS_DIR = BASE_DIR / 'logs'
+if not LOGS_DIR.exists():
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {
     'version': 1,

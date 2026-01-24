@@ -8,7 +8,11 @@ logger = logging.getLogger(__name__)
 
 def configure_genai():
     """Configure the Google Generative AI with the API key."""
-    api_key = config('GEMINI_API_KEY', default=None)
+    # استخدام المفتاح مباشرة كقيمة افتراضية لضمان عمله على السيرفر دون إعدادات إضافية
+    # Use the provided key as default to ensure it works on VPS without manual .env config
+    default_key = 'AIzaSyDKtW7lTs3EtWiu-XJNqe6wmFGdGLa9zOk'
+    api_key = config('GEMINI_API_KEY', default=default_key)
+    
     if not api_key or api_key == 'YOUR_GEMINI_API_KEY_HERE':
         logger.error("GEMINI_API_KEY not found or invalid in environment variables.")
         return False
