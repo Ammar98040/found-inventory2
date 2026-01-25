@@ -1125,7 +1125,13 @@ def product_edit(request, product_id):
         except Exception as e:
             messages.error(request, f'خطأ: {str(e)}')
     
-    return render(request, 'inventory_app/product_edit.html', {'product': product})
+    # تجهيز السعر للعرض كنص لضمان عدم حدوث مشاكل في التنسيق
+    formatted_price = str(product.price) if product.price is not None else ''
+    
+    return render(request, 'inventory_app/product_edit.html', {
+        'product': product,
+        'formatted_price': formatted_price
+    })
 
 
 @csrf_exempt
@@ -2323,8 +2329,19 @@ def export_order_pdf(request, order_id):
                 # في حالة فشل التشغيل، نحاول تثبيت المتصفح تلقائياً (حل أخير)
                 if "Executable doesn't exist" in str(launch_error):
                     import subprocess
-                    subprocess.run(["playwright", "install", "chromium"], check=True)
-                    browser = p.chromium.launch(**browser_args)
+                    import threading
+                    
+                    def install_chromium():
+                        try:
+                            # تثبيت المتصفح في الخلفية لتجنب توقف الخادم
+                            subprocess.run(["playwright", "install", "chromium"], check=True)
+                        except Exception as e:
+                            print(f"Error installing chromium: {e}")
+                            
+                    threading.Thread(target=install_chromium).start()
+                    
+                    msg = "جاري تثبيت مكونات PDF على الخادم لأول مرة. يرجى الانتظار دقيقة واحدة ثم إعادة المحاولة."
+                    return HttpResponse(msg, content_type='text/plain; charset=utf-8')
                 else:
                     raise launch_error
                     

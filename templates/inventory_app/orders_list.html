@@ -486,11 +486,13 @@
                 <div class="orders-grid">
                     {% for order in orders %}
                         <div class="order-card">
-                            <div class="order-number" style="margin-bottom: 5px;">
-                                {{ order.id }} - {{ order.recipient_name|default:"غير محدد" }}
-                            </div>
-                            <div style="font-size: 0.85rem; color: #64748b; direction: ltr; text-align: left; margin-bottom: 15px; font-family: sans-serif;">
-                                {{ order.created_at|date:"Y-m-d H:i" }}
+                            <div class="order-header" style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px;">
+                                <div class="order-title" style="font-weight: bold; font-size: 1.1rem; color: #1e293b;">
+                                    {{ order.id }} - {{ order.recipient_name|default:"غير محدد" }}
+                                </div>
+                                <div class="order-date" style="font-size: 0.85rem; color: #64748b; text-align: left; direction: ltr; font-family: 'Segoe UI', sans-serif;">
+                                    {{ order.created_at|date:"Y-m-d H:i" }}
+                                </div>
                             </div>
                             
                             <div class="order-details">
