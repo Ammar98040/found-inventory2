@@ -2152,15 +2152,15 @@ def export_products_pdf(request):
         
         # إنشاء PDF باستخدام Playwright
         with sync_playwright() as p:
-                    try:
-                        browser = p.chromium.launch(headless=True)
-                    except Exception as e:
-                        # إذا فشل التشغيل، نحاول تثبيت المتصفح تلقائياً
-                        print(f"Playwright launch failed: {e}. Attempting to install chromium...")
-                        subprocess.run(["playwright", "install", "chromium"], check=True)
-                        browser = p.chromium.launch(headless=True)
+            try:
+                browser = p.chromium.launch(headless=True)
+            except Exception as e:
+                # إذا فشل التشغيل، نحاول تثبيت المتصفح تلقائياً
+                print(f"Playwright launch failed: {e}. Attempting to install chromium...")
+                subprocess.run(["playwright", "install", "chromium"], check=True)
+                browser = p.chromium.launch(headless=True)
 
-                    page = browser.new_page()
+            page = browser.new_page()
             page.set_content(html_content)
             
             pdf_bytes = page.pdf(
