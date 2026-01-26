@@ -156,7 +156,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Whitenoise storage for better compression and caching
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-MEDIA_URL = '/media/'
+MEDIA_URL = '/uploads/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
