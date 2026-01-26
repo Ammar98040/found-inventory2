@@ -197,16 +197,17 @@ DATABASES['default']['ATOMIC_REQUESTS'] = True
 # ========== Security Settings ==========
 
 # إعدادات الأمان للإنتاج
-# يتم تفعيلها تلقائياً عندما DEBUG = False
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
-SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=not DEBUG, cast=bool)
-CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=not DEBUG, cast=bool)
+# يتم تعطيل إعادة توجيه SSL لأن السيرفر (Nginx/Traefik) يقوم بذلك بالفعل
+# وهذا يمنع مشكلة إعادة التوجيه المتكررة (Too many redirects)
+SECURE_SSL_REDIRECT = False
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0  # سنة واحدة في الإنتاج
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+SECURE_HSTS_SECONDS = 0  # تعطيل HSTS مؤقتاً لتجنب المشاكل
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
 # إعدادات CSRF
 CSRF_COOKIE_HTTPONLY = True
