@@ -159,6 +159,16 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = '/uploads/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Ensure media directories exist
+try:
+    if not os.path.exists(MEDIA_ROOT):
+        os.makedirs(MEDIA_ROOT)
+    products_dir = MEDIA_ROOT / 'products'
+    if not os.path.exists(products_dir):
+        os.makedirs(products_dir)
+except Exception as e:
+    pass
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
