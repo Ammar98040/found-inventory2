@@ -54,8 +54,25 @@ productNumbersTextarea.addEventListener('keydown', (e) => {
     }
 });
 
-// الحفظ التلقائي أثناء الكتابة
-productNumbersTextarea.addEventListener('input', () => {
+// عند اللصق: استبدال : بـ *
+productNumbersTextarea.addEventListener('paste', (e) => {
+    setTimeout(() => {
+        const val = productNumbersTextarea.value;
+        if (val.includes(':')) {
+            productNumbersTextarea.value = val.replace(/:/g, '*');
+        }
+    }, 0);
+});
+
+// استبدال : بـ * تلقائياً (الفاصل المعتمد هو * فقط)
+productNumbersTextarea.addEventListener('input', (e) => {
+    const val = productNumbersTextarea.value;
+    if (val.includes(':')) {
+        const start = productNumbersTextarea.selectionStart;
+        const newVal = val.replace(/:/g, '*');
+        productNumbersTextarea.value = newVal;
+        productNumbersTextarea.selectionStart = productNumbersTextarea.selectionEnd = start;
+    }
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(() => {
         autoSaveData();
@@ -134,9 +151,10 @@ async function handleSearch() {
     }
 }
 
-// معالجة الإدخال لفصل الأرقام والكميات
+// معالجة الإدخال لفصل الأرقام والكميات (الفاصل المعتمد: * فقط)
 function parseSearchInput(input) {
-    const lines = input.split('\n').filter(line => line.trim());
+    const normalized = input.replace(/:/g, '*');
+    const lines = normalized.split('\n').filter(line => line.trim());
     const products = [];
     const seenNumbers = new Set();
     const duplicates = [];
@@ -149,10 +167,10 @@ function parseSearchInput(input) {
         let productNumber = trimmed;
         let quantity = 0;
 
-        const lastColon = trimmed.lastIndexOf(':');
-        if (lastColon > 0) {
-            productNumber = trimmed.slice(0, lastColon).trim();
-            const quantityStr = trimmed.slice(lastColon + 1).trim();
+        const lastStar = trimmed.lastIndexOf('*');
+        if (lastStar > 0) {
+            productNumber = trimmed.slice(0, lastStar).trim();
+            const quantityStr = trimmed.slice(lastStar + 1).trim();
             const parsed = parseQuantity(quantityStr);
             if (Number.isNaN(parsed)) {
                 invalidQtyLines.push(trimmed);
@@ -385,10 +403,10 @@ function ensureGridAndHighlight(row, column) {
 function useSuggestion(originalNumber, suggestedNumber, requestedQty) {
     const current = productNumbersTextarea.value || '';
     let lines = current.trim() ? current.split('\n') : [];
-    const hasSuggested = lines.some(line => (line.trim().split(':')[0]) === suggestedNumber);
+    const hasSuggested = lines.some(line => (line.trim().split('*')[0]) === suggestedNumber);
     let replaced = false;
     lines = lines.map(line => {
-        const parts = line.trim().split(':');
+        const parts = line.trim().split('*');
         const num = (parts[0] || '').trim();
         if (num === originalNumber) {
             replaced = true;
@@ -396,7 +414,7 @@ function useSuggestion(originalNumber, suggestedNumber, requestedQty) {
                 return null;
             }
             if (requestedQty && Number(requestedQty) > 0) {
-                return `${suggestedNumber}:${requestedQty}`;
+                return `${suggestedNumber}*${requestedQty}`;
             }
             return `${suggestedNumber}`;
         }
@@ -404,7 +422,7 @@ function useSuggestion(originalNumber, suggestedNumber, requestedQty) {
     }).filter(Boolean);
     if (!replaced && !hasSuggested) {
         if (requestedQty && Number(requestedQty) > 0) {
-            lines.push(`${suggestedNumber}:${requestedQty}`);
+            lines.push(`${suggestedNumber}*${requestedQty}`);
         } else {
             lines.push(`${suggestedNumber}`);
         }
@@ -420,16 +438,16 @@ function useAllSuggestions(originalNumber, csvNumbers, requestedQty) {
     let lines = current.trim() ? current.split('\n') : [];
     let replaced = false;
     lines = lines.map(line => {
-        const parts = line.trim().split(':');
+        const parts = line.trim().split('*');
         const num = (parts[0] || '').trim();
         if (num === originalNumber) {
             replaced = true;
             const first = list[0];
             if (!first) return null;
-            const already = lines.some(l => (l.trim().split(':')[0]) === first);
+            const already = lines.some(l => (l.trim().split('*')[0]) === first);
             if (already) return null;
             if (requestedQty && Number(requestedQty) > 0) {
-                return `${first}:${requestedQty}`;
+                return `${first}*${requestedQty}`;
             }
             return `${first}`;
         }
@@ -437,10 +455,10 @@ function useAllSuggestions(originalNumber, csvNumbers, requestedQty) {
     }).filter(Boolean);
     for (let i = 1; i < list.length; i++) {
         const num = list[i];
-        const exists = lines.some(l => (l.trim().split(':')[0]) === num);
+        const exists = lines.some(l => (l.trim().split('*')[0]) === num);
         if (!exists) {
             if (requestedQty && Number(requestedQty) > 0) {
-                lines.push(`${num}:${requestedQty}`);
+                lines.push(`${num}*${requestedQty}`);
             } else {
                 lines.push(`${num}`);
             }
@@ -448,10 +466,10 @@ function useAllSuggestions(originalNumber, csvNumbers, requestedQty) {
     }
     if (!replaced && list.length > 0) {
         const first = list[0];
-        const exists = lines.some(l => (l.trim().split(':')[0]) === first);
+        const exists = lines.some(l => (l.trim().split('*')[0]) === first);
         if (!exists) {
             if (requestedQty && Number(requestedQty) > 0) {
-                lines.push(`${first}:${requestedQty}`);
+                lines.push(`${first}*${requestedQty}`);
             } else {
                 lines.push(`${first}`);
             }
@@ -1607,9 +1625,9 @@ function restoreData() {
                 }
             }
             
-            // استعادة البيانات
+            // استعادة البيانات (تحويل : إلى *)
             if (savedProducts) {
-                productNumbersTextarea.value = savedProducts;
+                productNumbersTextarea.value = savedProducts.replace(/:/g, '*');
                 productNumbersTextarea.dispatchEvent(new Event('input'));
                 productNumbersTextarea.focus();
             }

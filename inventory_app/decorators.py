@@ -3,9 +3,11 @@ Decorators مخصصة للتحكم في الصلاحيات
 جميع الصلاحيات مبنية في ملفات النظام الخاصة
 """
 from functools import wraps
+from urllib.parse import quote
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.http import HttpResponseForbidden, JsonResponse
+from django.conf import settings
 
 
 def admin_required(view_func):
@@ -60,23 +62,37 @@ def exclude_maintenance(view_func):
     """منع الموظفين من الوصول لصفحات الصيانة - المسؤول فقط"""
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
+        is_api = request.path.startswith('/api/') or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
         if not request.user.is_authenticated:
+            if is_api:
+                login_url = getattr(settings, 'LOGIN_URL', '/login/')
+                next_url = quote(request.get_full_path(), safe='')
+                redirect_url = f'{login_url}?next={next_url}' if '?' not in login_url else f'{login_url}&next={next_url}'
+                return JsonResponse({
+                    'success': False,
+                    'error': 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات',
+                    'redirect': redirect_url
+                }, status=401)
             messages.error(request, 'يجب تسجيل الدخول أولاً')
             return redirect('login')
-        
+
         # التحقق من الصلاحية
         can_access = False
         if hasattr(request.user, 'user_profile'):
             can_access = request.user.user_profile.can_access_maintenance()
         elif request.user.is_superuser:
             can_access = True
-        
+
         if not can_access:
+            if is_api:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'ليس لديك صلاحية للوصول لصفحات الصيانة'
+                }, status=403)
             messages.error(request, 'ليس لديك صلاحية للوصول لصفحات الصيانة')
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'ليس لديك صلاحية للوصول'}, status=403)
             return redirect('inventory_app:home')
-        
+
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 

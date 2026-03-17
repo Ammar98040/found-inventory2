@@ -375,48 +375,70 @@
                 </div>
 
                 <div class="mapping-section">
-                    <div class="mapping-item">
-                        <label>رقم المنتج الأصلي (MODEL) *</label>
+                    <!-- إلزامي -->
+                    <div class="mapping-item" style="border-color: #667eea;">
+                        <label>⭐ رقم المنتج <span style="color:#ef4444;">*</span></label>
                         <select id="productNumberColumn" required>
                             <option value="">-- اختر العمود --</option>
                         </select>
-                        <small style="display: block; color: #6c757d; margin-top: 5px;">الرقم الأصلي من Excel (مثل: 55#, AAA#)</small>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">مثال: 55, AAA, PROD-001</small>
                     </div>
 
-                    <div class="mapping-item">
-                        <label>رقم المنتج النهائي (FINAL MODEL) - اختياري</label>
-                        <select id="finalModelColumn">
-                            <option value="">-- اختياري --</option>
+                    <div class="mapping-item" style="border-color: #667eea;">
+                        <label>⭐ الاسم <span style="color:#ef4444;">*</span></label>
+                        <select id="nameColumn" required>
+                            <option value="">-- اختر العمود --</option>
                         </select>
-                        <small style="display: block; color: #10b981; margin-top: 5px;">✅ إذا حددت هذا العمود، سيستخدم الأرقام من Excel مباشرة (55, 55-1, AAA, AAA-1...)</small>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">اسم المنتج</small>
                     </div>
 
-                    <div class="mapping-item">
-                        <label>الإجمالي (T.QTY) *</label>
+                    <div class="mapping-item" style="border-color: #667eea;">
+                        <label>⭐ الكمية (حبة) <span style="color:#ef4444;">*</span></label>
                         <select id="totalQuantityColumn" required>
                             <option value="">-- اختر العمود --</option>
                         </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">الكمية الإجمالية (رقم)</small>
+                    </div>
+
+                    <!-- اختياري -->
+                    <div class="mapping-item">
+                        <label>🖼️ الصورة <span style="color:#10b981;font-size:0.85rem;">(اختياري)</span></label>
+                        <select id="imageColumn">
+                            <option value="">-- اختياري --</option>
+                        </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">رابط URL للصورة</small>
                     </div>
 
                     <div class="mapping-item">
-                        <label>الموقع (LOCATION) - اختياري</label>
+                        <label>💰 السعر <span style="color:#10b981;font-size:0.85rem;">(اختياري)</span></label>
+                        <select id="priceColumn">
+                            <option value="">-- اختياري --</option>
+                        </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">سعر المنتج</small>
+                    </div>
+
+                    <div class="mapping-item">
+                        <label>📦 الحاوية <span style="color:#10b981;font-size:0.85rem;">(اختياري)</span></label>
+                        <select id="containerColumn">
+                            <option value="">-- اختياري --</option>
+                        </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">اسم الحاوية</small>
+                    </div>
+
+                    <div class="mapping-item">
+                        <label>📍 الأماكن <span style="color:#10b981;font-size:0.85rem;">(اختياري)</span></label>
                         <select id="locationColumn">
                             <option value="">-- اختياري --</option>
                         </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">مثال: R1C5، 1-5، 15</small>
                     </div>
 
                     <div class="mapping-item">
-                        <label>الاسم (NAME) - اختياري</label>
-                        <select id="nameColumn">
+                        <label>📅 تاريخ الإضافة <span style="color:#10b981;font-size:0.85rem;">(اختياري)</span></label>
+                        <select id="createdAtColumn">
                             <option value="">-- اختياري --</option>
                         </select>
-                    </div>
-
-                    <div class="mapping-item">
-                        <label>الفئة (CATEGORY) - اختياري</label>
-                        <select id="categoryColumn">
-                            <option value="">-- اختياري --</option>
-                        </select>
+                        <small style="display:block;color:#6c757d;margin-top:5px;">مثال: 2026-03-07</small>
                     </div>
                 </div>
 
@@ -440,6 +462,20 @@
                     <button class="btn btn-primary" onclick="previewData()" style="font-size: 1.2rem; padding: 15px 40px;">
                         👁️ معاينة البيانات
                     </button>
+                </div>
+            </div>
+
+            <!-- الخطوة 3b: إنشاء الحاويات الجديدة -->
+            <div class="step hidden" id="step3b">
+                <div class="step-header">
+                    <div class="step-number" style="background:#f59e0b;font-size:1.4rem;">⚠️</div>
+                    <div class="step-title">حاويات جديدة في ملف Excel</div>
+                </div>
+                <div id="newContainersAlert" class="alert alert-warning"></div>
+                <div id="newContainersCards" style="display:grid;gap:15px;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));margin-top:20px;"></div>
+                <div style="margin-top:30px;text-align:center;display:flex;gap:15px;justify-content:center;flex-wrap:wrap;">
+                    <button class="btn btn-secondary" onclick="skipContainerCreation()">⏭️ تخطي وأكمل بدون إنشاء</button>
+                    <button class="btn btn-success" id="createContainersBtn" onclick="createAllContainersAndContinue()">✅ إنشاء الحاويات والمتابعة</button>
                 </div>
             </div>
 
@@ -478,10 +514,14 @@
                             <thead>
                                 <tr>
                                     <th>الصف</th>
-                                    <th>رقم المنتج الأصلي (MODEL)</th>
-                                    <th>رقم المنتج النهائي (FINAL MODEL)</th>
-                                    <th>الإجمالي</th>
-                                    <th>الموقع</th>
+                                    <th>رقم المنتج</th>
+                                    <th>الاسم</th>
+                                    <th>الصورة</th>
+                                    <th>السعر</th>
+                                    <th>الحاوية</th>
+                                    <th>الكمية (حبة)</th>
+                                    <th>الأماكن</th>
+                                    <th>تاريخ الإضافة</th>
                                     <th>الحالة</th>
                                 </tr>
                             </thead>
@@ -522,63 +562,61 @@
     </div>
 
     <script>
-        let excelHeaders = [];
-        let excelData = [];
-        let previewDataGlobal = [];  // لحفظ البيانات المعدلة
+        let excelHeaders       = [];
+        let excelData          = [];
+        let previewDataGlobal  = [];
+        let detectedMapping    = {};   // الكشف التلقائي للأعمدة
+        let pendingPreviewData = null; // حفظ بيانات المعاينة مؤقتاً
+        let pendingNewContainers = [];
 
-        // رفع الملف
+        // الأعمدة الثابتة المستهدفة
+        const TARGET_FIELDS = [
+            { key: 'product_number', label: 'رقم المنتج' },
+            { key: 'name',           label: 'الاسم' },
+            { key: 'image',          label: 'الصورة' },
+            { key: 'price',          label: 'السعر' },
+            { key: 'container',      label: 'الحاوية' },
+            { key: 'total_quantity', label: 'الكمية (حبة)' },
+            { key: 'location',       label: 'الأماكن' },
+            { key: 'created_at',     label: 'تاريخ الإضافة' },
+        ];
+
+        const CONTAINER_COLORS = ['#667eea','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+
         const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
+        const fileInput  = document.getElementById('fileInput');
 
         uploadArea.addEventListener('click', () => fileInput.click());
-
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
         });
-
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
         });
 
         function handleFile(file) {
             document.getElementById('fileName').textContent = file.name;
             document.getElementById('fileInfo').classList.remove('hidden');
-
             const formData = new FormData();
             formData.append('excel_file', file);
-
             document.getElementById('loading').classList.remove('hidden');
 
             fetch('{% url "inventory_app:upload_excel_file" %}', {
                 method: 'POST',
                 body: formData,
-                headers: {
-                    'X-CSRFToken': '{{ csrf_token }}'
-                }
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
             })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 document.getElementById('loading').classList.add('hidden');
-
                 if (data.success) {
-                    excelHeaders = data.headers;
-                    excelData = data.data;
+                    excelHeaders    = data.headers;
+                    excelData       = data.data;
+                    detectedMapping = data.detected_mapping || {};
                     displayFilePreview(data);
                     populateColumnSelectors();
                     document.getElementById('step2').classList.remove('hidden');
@@ -587,206 +625,204 @@
                     alert('خطأ: ' + (data.error || 'فشل رفع الملف'));
                 }
             })
-            .catch(error => {
-                document.getElementById('loading').classList.add('hidden');
-                alert('خطأ: ' + error.message);
-            });
+            .catch(err => { document.getElementById('loading').classList.add('hidden'); alert('خطأ: ' + err.message); });
         }
 
         function displayFilePreview(data) {
-            document.getElementById('totalRows').textContent = data.total_rows;
+            document.getElementById('totalRows').textContent    = data.total_rows;
             document.getElementById('totalColumns').textContent = data.headers.length;
 
             const thead = document.getElementById('previewTableHead');
             const tbody = document.getElementById('previewTableBody');
+            const dm    = data.detected_mapping || detectedMapping || {};
 
-            // Headers
+            // رؤوس الأعمدة المستهدفة الثابتة
             let headerHtml = '<tr>';
-            data.headers.forEach((header, index) => {
-                headerHtml += `<th>${header} (${index})</th>`;
+            TARGET_FIELDS.forEach(f => {
+                const detected = dm[f.key] !== undefined;
+                const badge = detected
+                    ? `<span style="font-size:0.7rem;background:rgba(255,255,255,0.3);padding:1px 5px;border-radius:8px;margin-right:4px;">✓</span>`
+                    : `<span style="font-size:0.7rem;opacity:0.6;margin-right:4px;">-</span>`;
+                headerHtml += `<th>${badge}${f.label}</th>`;
             });
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
 
-            // Data (first 10 rows)
+            // البيانات: استخراج قيمة كل عمود مستهدف من الصف
             let bodyHtml = '';
-            data.data.forEach(row => {
+            data.data.slice(0, 10).forEach(row => {
                 bodyHtml += '<tr>';
-                row.forEach(cell => {
-                    bodyHtml += `<td>${cell !== null ? cell : ''}</td>`;
+                TARGET_FIELDS.forEach(f => {
+                    const idx = dm[f.key];
+                    const val = (idx !== undefined && idx !== null && row[idx] !== null && row[idx] !== undefined)
+                        ? row[idx] : '<span style="color:#d1d5db;">—</span>';
+                    bodyHtml += `<td>${val}</td>`;
                 });
                 bodyHtml += '</tr>';
             });
             tbody.innerHTML = bodyHtml;
         }
 
-        function populateColumnSelectors() {
-            const selectors = [
-                'productNumberColumn',
-                'finalModelColumn',
-                'totalQuantityColumn',
-                'locationColumn',
-                'nameColumn',
-                'categoryColumn'
-            ];
+        // ربط ID الـ select بمفتاح الحقل للكشف التلقائي
+        const SELECT_TO_FIELD = {
+            productNumberColumn: 'product_number',
+            nameColumn:          'name',
+            totalQuantityColumn: 'total_quantity',
+            imageColumn:         'image',
+            priceColumn:         'price',
+            containerColumn:     'container',
+            locationColumn:      'location',
+            createdAtColumn:     'created_at',
+        };
 
-            selectors.forEach(selectorId => {
-                const select = document.getElementById(selectorId);
-                const isOptional = selectorId === 'finalModelColumn' || selectorId === 'locationColumn' || selectorId === 'nameColumn' || selectorId === 'categoryColumn';
-                select.innerHTML = isOptional ? '<option value="">-- اختياري --</option>' : '<option value="">-- اختر العمود --</option>';
-                excelHeaders.forEach((header, index) => {
-                    const option = document.createElement('option');
-                    option.value = index;
-                    option.textContent = `${header} (${index})`;
-                    select.appendChild(option);
+        function populateColumnSelectors() {
+            const required = ['productNumberColumn', 'nameColumn', 'totalQuantityColumn'];
+            const optional = ['imageColumn', 'priceColumn', 'containerColumn', 'locationColumn', 'createdAtColumn'];
+            const dm       = detectedMapping || {};
+
+            required.forEach(id => {
+                const sel   = document.getElementById(id);
+                const field = SELECT_TO_FIELD[id];
+                sel.innerHTML = '<option value="">-- اختر العمود --</option>';
+                excelHeaders.forEach((h, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = `${h} (${i})`;
+                    sel.appendChild(opt);
                 });
+                if (field && dm[field] !== undefined) sel.value = dm[field];
+            });
+
+            optional.forEach(id => {
+                const sel   = document.getElementById(id);
+                const field = SELECT_TO_FIELD[id];
+                sel.innerHTML = '<option value="">-- اختياري --</option>';
+                excelHeaders.forEach((h, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = `${h} (${i})`;
+                    sel.appendChild(opt);
+                });
+                if (field && dm[field] !== undefined) sel.value = dm[field];
             });
         }
 
-        function previewData() {
-            const productNumberCol = document.getElementById('productNumberColumn').value;
-            const finalModelCol = document.getElementById('finalModelColumn').value;
-            const totalQuantityCol = document.getElementById('totalQuantityColumn').value;
-            const locationCol = document.getElementById('locationColumn').value;
-            const nameCol = document.getElementById('nameColumn').value;
-            const categoryCol = document.getElementById('categoryColumn').value;
-
-            if (!productNumberCol || !totalQuantityCol) {
-                alert('يجب تحديد جميع الحقول المطلوبة (*)');
-                return;
-            }
-
-            const columnMapping = {
-                product_number: parseInt(productNumberCol),
-                total_quantity: parseInt(totalQuantityCol)
+        function buildColumnMapping() {
+            const mapping = {
+                product_number: parseInt(document.getElementById('productNumberColumn').value),
+                name:           parseInt(document.getElementById('nameColumn').value),
+                total_quantity: parseInt(document.getElementById('totalQuantityColumn').value)
             };
+            const imageVal     = document.getElementById('imageColumn').value;
+            const priceVal     = document.getElementById('priceColumn').value;
+            const containerVal = document.getElementById('containerColumn').value;
+            const locationVal   = document.getElementById('locationColumn').value;
+            const createdAtVal  = document.getElementById('createdAtColumn').value;
+            if (imageVal     !== '') mapping.image      = parseInt(imageVal);
+            if (priceVal     !== '') mapping.price      = parseInt(priceVal);
+            if (containerVal !== '') mapping.container  = parseInt(containerVal);
+            if (locationVal  !== '') mapping.location   = parseInt(locationVal);
+            if (createdAtVal !== '') mapping.created_at = parseInt(createdAtVal);
+            return mapping;
+        }
 
-            if (finalModelCol) {
-                columnMapping.final_model = parseInt(finalModelCol);
-            }
+        function previewData() {
+            const pn = document.getElementById('productNumberColumn').value;
+            const nm = document.getElementById('nameColumn').value;
+            const tq = document.getElementById('totalQuantityColumn').value;
 
-            if (locationCol) {
-                columnMapping.location = parseInt(locationCol);
-            }
-            if (nameCol) {
-                columnMapping.name = parseInt(nameCol);
-            }
-            if (categoryCol) {
-                columnMapping.category = parseInt(categoryCol);
+            if (!pn || !nm || !tq) {
+                alert('يجب تحديد جميع الحقول الإلزامية المميزة بـ (*):\nرقم المنتج، الاسم، الكمية (حبة)');
+                return;
             }
 
             document.getElementById('loading').classList.remove('hidden');
 
             fetch('{% url "inventory_app:preview_excel_data" %}', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({
-                    column_mapping: columnMapping
-                })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ column_mapping: buildColumnMapping() })
             })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 document.getElementById('loading').classList.add('hidden');
-
                 if (data.success) {
-                    console.log('Response data:', data);
-                    console.log('Total rows from server:', data.total_rows);
-                    
-                    // التحقق من وجود preview في الاستجابة
-                    const previewData = data.preview || data.data;
-                    
-                    console.log('Preview data length:', previewData ? previewData.length : 0);
-                    console.log('Is array:', Array.isArray(previewData));
-                    
-                    if (!Array.isArray(previewData)) {
-                        alert('خطأ: البيانات المستلمة غير صحيحة');
-                        console.error('Expected array but got:', previewData);
-                        return;
+                    const pd = data.preview || data.data;
+                    if (!Array.isArray(pd)) { alert('خطأ: البيانات المستلمة غير صحيحة'); return; }
+
+                    // هل هناك حاويات جديدة؟
+                    if (data.new_containers && data.new_containers.length > 0) {
+                        showNewContainersStep(data.new_containers, pd);
+                    } else {
+                        displayFinalPreview(pd);
+                        document.getElementById('step4').classList.remove('hidden');
+                        document.getElementById('step4').scrollIntoView({ behavior: 'smooth' });
                     }
-                    
-                    displayFinalPreview(previewData);
-                    document.getElementById('step4').classList.remove('hidden');
-                    document.getElementById('step4').scrollIntoView({ behavior: 'smooth' });
                 } else {
                     alert('خطأ: ' + (data.error || 'فشلت المعاينة'));
                 }
             })
-            .catch(error => {
-                document.getElementById('loading').classList.add('hidden');
-                console.error('Error:', error);
-                alert('خطأ: ' + error.message);
-            });
+            .catch(err => { document.getElementById('loading').classList.add('hidden'); alert('خطأ: ' + err.message); });
         }
 
         function displayFinalPreview(preview) {
-            if (!preview || !Array.isArray(preview)) {
-                console.error('Preview is not an array:', preview);
-                alert('خطأ في عرض البيانات');
-                return;
+            if (!preview || !Array.isArray(preview) || preview.length === 0) {
+                alert('لا توجد بيانات للمعاينة'); return;
             }
-
-            if (preview.length === 0) {
-                alert('لا توجد بيانات للمعاينة');
-                return;
-            }
-            
-            // حفظ البيانات في المتغير العام
             previewDataGlobal = preview;
 
             const tbody = document.getElementById('previewDataBody');
             tbody.innerHTML = '';
-            
-            let newCount = 0;
-            let existsCount = 0;
-            let errorCount = 0;
-            
+            let newCount = 0, existsCount = 0, errorCount = 0;
+
             preview.forEach((item, index) => {
-                if (item.status === 'new') newCount++;
+                if      (item.status === 'new')    newCount++;
                 else if (item.status === 'exists') existsCount++;
-                else if (item.status === 'error') errorCount++;
-                
+                else if (item.status === 'error')  errorCount++;
+
                 const row = document.createElement('tr');
                 row.setAttribute('data-row-index', index);
-                
-                let statusBadge = '';
-                let rowStyle = '';
-                
+
+                let statusBadge = '', rowStyle = '';
                 if (item.status === 'new') {
-                    statusBadge = '<span style="background: #10b981; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">✓ جديد</span>';
-                    rowStyle = 'background: #f0fdf4;';
+                    statusBadge = '<span style="background:#10b981;color:white;padding:4px 8px;border-radius:4px;font-size:0.85rem;">✓ جديد</span>';
+                    rowStyle = 'background:#f0fdf4;';
                 } else if (item.status === 'exists') {
-                    statusBadge = '<span style="background: #f59e0b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">⚠️ موجود</span>';
-                    rowStyle = 'background: #fffbeb;';
+                    statusBadge = '<span style="background:#f59e0b;color:white;padding:4px 8px;border-radius:4px;font-size:0.85rem;">⚠️ موجود</span>';
+                    rowStyle = 'background:#fffbeb;';
                 } else {
-                    statusBadge = '<span style="background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">✗ خطأ</span>';
-                    rowStyle = 'background: #fef2f2;';
+                    statusBadge = '<span style="background:#ef4444;color:white;padding:4px 8px;border-radius:4px;font-size:0.85rem;">✗ خطأ</span>';
+                    rowStyle = 'background:#fef2f2;';
                 }
-                
+
+                // عرض الصورة كـ thumbnail إذا وجدت
+                const imgCell = item.image_url
+                    ? `<img src="${item.image_url}" style="height:36px;border-radius:4px;" onerror="this.style.display='none'">`
+                    : '<span style="color:#9ca3af;">-</span>';
+
                 row.style.cssText = rowStyle;
                 row.innerHTML = `
-                    <td>${item.row}</td>
-                    <td><strong>${item.original_number}</strong></td>
-                    <td><strong style="color: #667eea;">${item.final_number}</strong></td>
-
+                    <td style="color:#6b7280;font-size:0.85rem;">${item.row}</td>
+                    <td><strong style="color:#667eea;">${item.product_number || '-'}</strong></td>
+                    <td>${item.name || '-'}</td>
+                    <td style="text-align:center;">${imgCell}</td>
+                    <td>${item.price !== undefined && item.price !== null && item.price !== '' ? item.price : '-'}</td>
+                    <td>${item.container_name || '<span style="color:#9ca3af;">-</span>'}</td>
                     <td><strong>${item.total_quantity}</strong></td>
-                    <td>${item.location || '-'}</td>
+                    <td>${item.location || '<span style="color:#9ca3af;">-</span>'}</td>
+                    <td>${item.created_at || '<span style="color:#9ca3af;">-</span>'}</td>
                     <td>
                         ${statusBadge}
-                        <div style="font-size: 0.8rem; color: #6c757d; margin-top: 5px;">${item.message}</div>
+                        <div style="font-size:0.8rem;color:#6c757d;margin-top:4px;">${item.message || ''}</div>
                     </td>
                 `;
-                
                 tbody.appendChild(row);
             });
-            
-            // تحديث الإحصائيات
-            document.getElementById('previewTotalRows').textContent = preview.length;
-            document.getElementById('previewNewCount').textContent = newCount;
+
+            document.getElementById('previewTotalRows').textContent  = preview.length;
+            document.getElementById('previewNewCount').textContent   = newCount;
             document.getElementById('previewExistsCount').textContent = existsCount;
-            document.getElementById('previewErrorCount').textContent = errorCount;
+            document.getElementById('previewErrorCount').textContent  = errorCount;
         }
 
         function backToMapping() {
@@ -795,112 +831,146 @@
         }
 
         function confirmAndProcess() {
-            // حساب عدد الأخطاء المتبقية
-            const remainingErrors = previewDataGlobal.filter(item => item.status === 'error').length;
-            
-            let confirmMessage = 'هل أنت متأكد من إضافة جميع المنتجات؟';
-            if (remainingErrors > 0) {
-                confirmMessage = `⚠️ هناك ${remainingErrors} صف يحتوي على أخطاء ولن يتم إضافته.\n\nهل تريد المتابعة؟`;
-            }
-            
-            if (!confirm(confirmMessage)) {
-                return;
-            }
+            const remainingErrors = previewDataGlobal.filter(i => i.status === 'error').length;
+            let msg = 'هل أنت متأكد من إضافة جميع المنتجات؟';
+            if (remainingErrors > 0) msg = `⚠️ هناك ${remainingErrors} صف يحتوي على أخطاء ولن يتم إضافته.\n\nهل تريد المتابعة؟`;
+            if (!confirm(msg)) return;
 
-            const productNumberCol = document.getElementById('productNumberColumn').value;
-            const finalModelCol = document.getElementById('finalModelColumn').value;
-            const totalQuantityCol = document.getElementById('totalQuantityColumn').value;
-            const locationCol = document.getElementById('locationColumn').value;
-            const nameCol = document.getElementById('nameColumn').value;
-            const categoryCol = document.getElementById('categoryColumn').value;
             const conflictResolution = document.querySelector('input[name="conflictResolution"]:checked').value;
-
-            const columnMapping = {
-                product_number: parseInt(productNumberCol),
-                total_quantity: parseInt(totalQuantityCol)
-            };
-
-            if (finalModelCol) {
-                columnMapping.final_model = parseInt(finalModelCol);
-            }
-
-            if (locationCol) {
-                columnMapping.location = parseInt(locationCol);
-            }
-            if (nameCol) {
-                columnMapping.name = parseInt(nameCol);
-            }
-            if (categoryCol) {
-                columnMapping.category = parseInt(categoryCol);
-            }
-
             document.getElementById('loading').classList.remove('hidden');
 
             fetch('{% url "inventory_app:process_excel_data" %}', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                 body: JSON.stringify({
-                    column_mapping: columnMapping,
+                    column_mapping: buildColumnMapping(),
                     conflict_resolution: conflictResolution,
-                    edited_data: previewDataGlobal  // إرسال البيانات المعدلة
+                    edited_data: previewDataGlobal
                 })
             })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 document.getElementById('loading').classList.add('hidden');
-
-                if (data.success) {
-                    displayResults(data.results);
-                } else {
-                    alert('خطأ: ' + (data.error || 'فشلت المعالجة'));
-                }
+                if (data.success) displayResults(data.results);
+                else alert('خطأ: ' + (data.error || 'فشلت المعالجة'));
             })
-            .catch(error => {
-                document.getElementById('loading').classList.add('hidden');
-                alert('خطأ: ' + error.message);
-            });
+            .catch(err => { document.getElementById('loading').classList.add('hidden'); alert('خطأ: ' + err.message); });
         }
 
+        // ===================== الحاويات الجديدة =====================
+
+        function showNewContainersStep(newContainers, previewData) {
+            pendingPreviewData   = previewData;
+            pendingNewContainers = newContainers;
+
+            document.getElementById('newContainersAlert').innerHTML =
+                `<strong>⚠️ تم اكتشاف ${newContainers.length} حاوية جديدة غير موجودة في النظام:</strong>
+                 <br><span style="color:#92400e;">${newContainers.join(' &nbsp;|&nbsp; ')}</span>
+                 <br><br>يمكنك إنشاءها الآن مع تحديد الاسم والوصف واللون، أو تخطيها والمتابعة.`;
+
+            const cards = document.getElementById('newContainersCards');
+            cards.innerHTML = '';
+            newContainers.forEach((name, i) => {
+                const color = CONTAINER_COLORS[i % CONTAINER_COLORS.length];
+                cards.innerHTML += `
+                <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);border-right:4px solid ${color};">
+                    <h4 style="margin:0 0 14px 0;color:#1f2937;">📦 ${name}</h4>
+                    <label style="display:block;font-weight:600;color:#4b5563;margin-bottom:4px;">الاسم</label>
+                    <input type="text" id="cn_name_${i}" value="${name}"
+                        style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+                    <label style="display:block;font-weight:600;color:#4b5563;margin-bottom:4px;">الوصف (اختياري)</label>
+                    <input type="text" id="cn_desc_${i}" placeholder="وصف الحاوية..."
+                        style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+                    <label style="display:block;font-weight:600;color:#4b5563;margin-bottom:4px;">اللون</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="color" id="cn_color_${i}" value="${color}"
+                            style="width:42px;height:38px;border:none;border-radius:6px;cursor:pointer;padding:2px;">
+                        <input type="text" id="cn_colortext_${i}" value="${color}"
+                            style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+                    </div>
+                </div>`;
+            });
+
+            // مزامنة منتقي الألوان
+            setTimeout(() => {
+                newContainers.forEach((_, i) => {
+                    const picker = document.getElementById(`cn_color_${i}`);
+                    const text   = document.getElementById(`cn_colortext_${i}`);
+                    if (picker && text) {
+                        picker.addEventListener('input', () => { text.value = picker.value; });
+                        text.addEventListener('input', () => {
+                            if (/^#[0-9A-Fa-f]{3,6}$/.test(text.value)) picker.value = text.value;
+                        });
+                    }
+                });
+            }, 100);
+
+            document.getElementById('step3b').classList.remove('hidden');
+            document.getElementById('step3b').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function skipContainerCreation() {
+            document.getElementById('step3b').classList.add('hidden');
+            displayFinalPreview(pendingPreviewData);
+            document.getElementById('step4').classList.remove('hidden');
+            document.getElementById('step4').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function createAllContainersAndContinue() {
+            const btn  = document.getElementById('createContainersBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ جاري الإنشاء...';
+            const csrf = '{{ csrf_token }}';
+            const errors = [];
+
+            for (let i = 0; i < pendingNewContainers.length; i++) {
+                const name  = (document.getElementById(`cn_name_${i}`)?.value || '').trim();
+                const desc  = (document.getElementById(`cn_desc_${i}`)?.value || '').trim();
+                const color = (document.getElementById(`cn_colortext_${i}`)?.value || '#667eea').trim();
+                if (!name) continue;
+                try {
+                    const r = await fetch('/api/container/add/', {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': csrf, 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ name, description: desc, color })
+                    });
+                    const d = await r.json();
+                    if (!d.success) errors.push(`${name}: ${d.error}`);
+                } catch (e) {
+                    errors.push(`${name}: ${e.message}`);
+                }
+            }
+
+            btn.disabled    = false;
+            btn.textContent = '✅ إنشاء الحاويات والمتابعة';
+
+            if (errors.length > 0) {
+                alert(`⚠️ بعض الحاويات لم تُنشأ:\n${errors.join('\n')}`);
+            } else {
+                alert(`✅ تم إنشاء ${pendingNewContainers.length} حاوية بنجاح!`);
+            }
+
+            document.getElementById('step3b').classList.add('hidden');
+            displayFinalPreview(pendingPreviewData);
+            document.getElementById('step4').classList.remove('hidden');
+            document.getElementById('step4').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ============================================================
+
         function displayResults(results) {
-            document.getElementById('step1').classList.add('hidden');
-            document.getElementById('step2').classList.add('hidden');
-            document.getElementById('step3').classList.add('hidden');
-            document.getElementById('step4').classList.add('hidden');
+            ['step1','step2','step3','step3b','step4'].forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById('resultsStep').classList.remove('hidden');
 
             let html = '';
-
-            if (results.added > 0) {
-                html += `<div class="alert alert-success">
-                    <strong>✅ تم إضافة ${results.added} منتج جديد</strong>
-                </div>`;
-            }
-
-            if (results.updated > 0) {
-                html += `<div class="alert alert-info">
-                    <strong>🔄 تم تحديث ${results.updated} منتج موجود</strong>
-                </div>`;
-            }
-
-            if (results.skipped > 0) {
-                html += `<div class="alert alert-warning">
-                    <strong>⏭️ تم تجاهل ${results.skipped} منتج موجود مسبقاً</strong>
-                </div>`;
-            }
-
-            if (results.errors.length > 0) {
-                html += `<div class="alert alert-error">
-                    <strong>❌ أخطاء (${results.errors.length}):</strong>
-                    <ul style="margin-top: 10px;">`;
-                results.errors.forEach(error => {
-                    html += `<li>${error}</li>`;
-                });
+            if (results.added   > 0) html += `<div class="alert alert-success"><strong>✅ تم إضافة ${results.added} منتج جديد</strong></div>`;
+            if (results.updated > 0) html += `<div class="alert alert-info"><strong>🔄 تم تحديث ${results.updated} منتج موجود</strong></div>`;
+            if (results.skipped > 0) html += `<div class="alert alert-warning"><strong>⏭️ تم تجاهل ${results.skipped} منتج موجود مسبقاً</strong></div>`;
+            if (results.errors && results.errors.length > 0) {
+                html += `<div class="alert alert-error"><strong>❌ أخطاء (${results.errors.length}):</strong><ul style="margin-top:10px;">`;
+                results.errors.forEach(e => { html += `<li>${e}</li>`; });
                 html += `</ul></div>`;
             }
-
             document.getElementById('resultsContent').innerHTML = html;
         }
     </script>

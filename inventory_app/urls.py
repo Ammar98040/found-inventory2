@@ -66,6 +66,7 @@ urlpatterns = [
     # النسخ الاحتياطي والاستعادة
     path('backup-restore/', views.backup_restore_page, name='backup_restore'),
     path('api/export-backup/', views.export_backup, name='export_backup'),
+    path('api/export-backup-full/', views.export_backup_full, name='export_backup_full'),
     path('api/inspect-backup/', views.inspect_backup, name='inspect_backup'),
     path('api/import-backup/', views.import_backup, name='import_backup'),
     path('api/reset-environment/', views.reset_environment, name='reset_environment'),
@@ -112,6 +113,7 @@ urlpatterns = [
     # إدارة الحاويات
     path('containers/', views.container_list, name='container_list'),
     path('api/container/add/', views.container_add, name='container_add'),
+    path('api/container/<int:container_id>/update/', views.container_update, name='container_update'),
     path('api/container/<int:container_id>/delete/', views.container_delete, name='container_delete'),
     path('api/assign-products-to-container/', views.assign_products_to_container, name='assign_products_to_container'),
 

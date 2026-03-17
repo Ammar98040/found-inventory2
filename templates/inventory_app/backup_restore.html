@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>النسخ الاحتياطي والاستعادة</title>
     {% load static %}
     <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
@@ -142,10 +143,16 @@
                     <br>• جميع ملفات المستخدمين
                     <br><br>يمكنك استخدام هذا الملف لاستعادة البيانات الكاملة لاحقاً.
                 </p>
-                <button onclick="exportBackup()" class="btn btn--sm btn--success">
-                    <span class="icon">📥</span>
-                    <span>تحميل النسخ الاحتياطي</span>
-                </button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="exportBackup()" class="btn btn--sm btn--success">
+                        <span class="icon">📥</span>
+                        <span>تحميل النسخ الاحتياطي (JSON)</span>
+                    </button>
+                    <button onclick="exportBackupFull()" class="btn btn--sm btn--primary">
+                        <span class="icon">📦</span>
+                        <span>تحميل نسخة كاملة (مع الصور - ZIP)</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -162,7 +169,7 @@
                 <div class="upload-area" id="upload-area" onclick="document.getElementById('backup-file-input').click()">
                     <div style="font-size: 3rem; margin-bottom: 15px;">📁</div>
                     <div style="font-weight: bold; margin-bottom: 10px;">انقر لاختيار الملف أو اسحب الملف هنا</div>
-                    <div style="color: var(--text-secondary); font-size: 0.9rem;">الملفات المدعومة: .json</div>
+                    <div style="color: var(--text-secondary); font-size: 0.9rem;">الملفات المدعومة: .json أو .zip (نسخة مع الصور)</div>
                 </div>
                 
                 <input type="file" id="backup-file-input" accept=".json,.zip" style="display: none;" onchange="handleFileSelect(this)">
@@ -197,6 +204,7 @@
             <ul style="color: #78350f; line-height: 1.8;">
                 <li>يُنصح بعمل نسخة احتياطية بانتظام لحماية بياناتك</li>
                 <li>يحتفظ ملف النسخ الاحتياطي بجميع البيانات: المستودعات، الأماكن، المنتجات، والسجلات</li>
+                <li><strong>للحصول على الصور:</strong> استخدم "تحميل نسخة كاملة (مع الصور - ZIP)" ثم استورد ملف الـ ZIP</li>
                 <li>عند الاستيراد مع "حذف البيانات الموجودة"، سيتم محو جميع البيانات الحالية</li>
                 <li>احتفظ بملفات النسخ الاحتياطي في مكان آمن</li>
                 <li>تأكد من صحة ملف النسخ الاحتياطي قبل الاستيراد</li>
@@ -322,25 +330,56 @@
     
     <script>
         let selectedFile = null;
+        
+        // دالة مساعدة للحصول على CSRF token (يعمل مع CSRF_COOKIE_HTTPONLY=True)
+        function getCsrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta && meta.getAttribute('content')) return meta.getAttribute('content');
+            const input = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (input && input.value) return input.value;
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, 10) === 'csrftoken=') {
+                        cookieValue = decodeURIComponent(cookie.substring(10));
+                        break;
+                    }
+                }
+            }
+            return cookieValue || '';
+        }
 
         function exportBackup() {
             if (!confirm('هل تريد تحميل النسخ الاحتياطي؟')) {
                 return;
             }
-            
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/api/export-backup/';
-            
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
-            if (!csrfToken) {
-                const token = document.createElement('input');
-                token.type = 'hidden';
-                token.name = 'csrfmiddlewaretoken';
-                token.value = '{{ csrf_token }}';
-                form.appendChild(token);
+            const token = document.createElement('input');
+            token.type = 'hidden';
+            token.name = 'csrfmiddlewaretoken';
+            token.value = getCsrfToken();
+            form.appendChild(token);
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
+        function exportBackupFull() {
+            if (!confirm('هل تريد تحميل النسخة الاحتياطية الكاملة (مع الصور)؟ قد يستغرق التحميل وقتاً أطول.')) {
+                return;
             }
-            
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/api/export-backup-full/';
+            const token = document.createElement('input');
+            token.type = 'hidden';
+            token.name = 'csrfmiddlewaretoken';
+            token.value = getCsrfToken();
+            form.appendChild(token);
             document.body.appendChild(form);
             form.submit();
             document.body.removeChild(form);
@@ -375,7 +414,9 @@
                         const keyLabels = {
                             warehouses: 'المستودعات',
                             locations: 'الأماكن',
+                            containers: 'الحاويات',
                             products: 'المنتجات',
+                            users: 'المستخدمون',
                             orders: 'الطلبات',
                             returns: 'المرتجعات',
                             audit_logs: 'سجلات العمليات',
@@ -399,9 +440,20 @@
                         html += '</div>';
                         document.getElementById('sections-container').innerHTML = html;
                         document.getElementById('import-btn').disabled = false;
+                        const csrftoken = getCsrfToken();
                         const fd = new FormData();
                         fd.append('backup_file', selectedFile);
-                        fetch('/api/inspect-backup/', { method: 'POST', body: fd, credentials: 'same-origin' })
+                        if (csrftoken) fd.append('csrfmiddlewaretoken', csrftoken);
+                                    fetch('/api/inspect-backup/', {
+                                        method: 'POST',
+                                        body: fd,
+                                        credentials: 'same-origin',
+                                        headers: {
+                                            'X-CSRFToken': csrftoken,
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
                           .then(r => r.json())
                           .then(info => {
                             if (!info.success) {
@@ -447,7 +499,9 @@
                                     const keyLabels = {
                                         warehouses: 'المستودعات',
                                         locations: 'الأماكن',
+                                        containers: 'الحاويات',
                                         products: 'المنتجات',
+                                        users: 'المستخدمون',
                                         orders: 'الطلبات',
                                         returns: 'المرتجعات',
                                         audit_logs: 'سجلات العمليات',
@@ -470,9 +524,20 @@
                                     html += '</div>';
                                     document.getElementById('sections-container').innerHTML = html;
                                     document.getElementById('import-btn').disabled = false;
+                                    const csrftoken = getCsrfToken();
                                     const fd = new FormData();
                                     fd.append('backup_file', selectedFile);
-                                    fetch('/api/inspect-backup/', { method: 'POST', body: fd, credentials: 'same-origin' })
+                                    if (csrftoken) fd.append('csrfmiddlewaretoken', csrftoken);
+                                    fetch('/api/inspect-backup/', {
+                                        method: 'POST',
+                                        body: fd,
+                                        credentials: 'same-origin',
+                                        headers: {
+                                            'X-CSRFToken': csrftoken,
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
                                       .then(r => r.json())
                                       .then(info => {
                                         if (!info.success) {
@@ -505,9 +570,20 @@
                                 } catch (e2) {
                                     document.getElementById('sections-container').innerHTML = '<div style="color:#b91c1c;">تعذر معاينة الملف، سيتم تحليل الملف على الخادم</div>';
                                     document.getElementById('import-btn').disabled = false;
+                                    const csrftoken = getCsrfToken();
                                     const fd = new FormData();
                                     fd.append('backup_file', selectedFile);
-                                    fetch('/api/inspect-backup/', { method: 'POST', body: fd, credentials: 'same-origin' })
+                                    if (csrftoken) fd.append('csrfmiddlewaretoken', csrftoken);
+                                    fetch('/api/inspect-backup/', {
+                                        method: 'POST',
+                                        body: fd,
+                                        credentials: 'same-origin',
+                                        headers: {
+                                            'X-CSRFToken': csrftoken,
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
                                       .then(r => r.json())
                                       .then(info => {
                                         if (!info.success) return;
@@ -534,7 +610,9 @@
                             document.getElementById('import-btn').disabled = false;
                             const fd = new FormData();
                             fd.append('backup_file', selectedFile);
-                            fetch('/api/inspect-backup/', { method: 'POST', body: fd, credentials: 'same-origin' })
+                            const csrftoken = getCsrfToken();
+                            if (csrftoken) fd.append('csrfmiddlewaretoken', csrftoken);
+                            fetch('/api/inspect-backup/', { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-CSRFToken': csrftoken || '', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
                               .then(r => r.json())
                               .then(info => {
                                 if (!info.success) {
@@ -582,6 +660,8 @@
             const formData = new FormData();
             formData.append('backup_file', selectedFile);
             formData.append('clear_existing', clearExisting);
+            const csrftoken = getCsrfToken();
+            if (csrftoken) formData.append('csrfmiddlewaretoken', csrftoken);
             const avoidDuplicates = document.getElementById('avoid-duplicates').checked;
             formData.append('avoid_duplicates', avoidDuplicates);
             const selectedSections = Array.from(document.querySelectorAll('.section-checkbox'))
@@ -600,39 +680,35 @@
                 formData.append('selected_sections', JSON.stringify(finalSelected));
             }
             
-            // إضافة CSRF token
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
-            if (csrfToken) {
-                formData.append('csrfmiddlewaretoken', csrfToken.value);
-            } else {
-                // محاولة الحصول من cookies
-                const cookieValue = document.cookie
-                    .split('; ')
-                    .find(row => row.startsWith('csrftoken='))
-                    ?.split('=')[1];
-                if (cookieValue) {
-                    formData.append('csrfmiddlewaretoken', cookieValue);
-                }
-            }
-            
             fetch('/api/import-backup/', {
                 method: 'POST',
                 body: formData,
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
             })
             .then(async (response) => {
+                if (response.status === 401) {
+                    const d = await response.json().catch(() => ({}));
+                    window.location.href = d.redirect || '/login/?next=' + encodeURIComponent(window.location.pathname);
+                    return;
+                }
                 if (response.redirected || (response.status >= 300 && response.status < 400)) {
-                    throw new Error('تسجيل الدخول مطلوب');
+                    throw new Error('تسجيل الدخول مطلوب - يرجى تحديث الصفحة والمحاولة مرة أخرى');
                 }
                 const ct = response.headers.get('content-type') || '';
                 if (!ct.includes('application/json')) {
                     const txt = await response.text();
-                    const msg = txt.startsWith('<!DOCTYPE') ? 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات' : (txt || 'استجابة غير صالحة');
+                    const msg = txt.startsWith('<!DOCTYPE') ? 'فشل التحقق (CSRF/الجلسة) - يرجى تحديث الصفحة وتسجيل الدخول من جديد' : (txt || 'استجابة غير صالحة');
                     throw new Error(msg);
                 }
                 return response.json();
             })
             .then(data => {
+                if (!data) return;
                 if (data.success) {
                     const imported = data.imported ? JSON.stringify(data.imported) : '';
                     alert('✅ ' + data.message + (imported ? '\n' + imported : ''));
@@ -649,8 +725,23 @@
 
         function resetEnvironment() {
             if (!confirm('⚠️ سيتم حذف جميع البيانات الحالية وإعداد بيئة نظيفة. هل أنت متأكد؟')) return;
-            fetch('/api/reset-environment/', { method: 'POST', credentials: 'same-origin' })
+            const csrftoken = getCsrfToken();
+            
+            fetch('/api/reset-environment/', { 
+                method: 'POST', 
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
               .then(async (response) => {
+                if (response.status === 401) {
+                    const d = await response.json().catch(() => ({}));
+                    window.location.href = d.redirect || '/login/?next=' + encodeURIComponent(window.location.pathname);
+                    return;
+                }
                 const ct = response.headers.get('content-type') || '';
                 if (!ct.includes('application/json')) {
                     const txt = await response.text();

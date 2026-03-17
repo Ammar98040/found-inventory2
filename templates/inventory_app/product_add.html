@@ -61,8 +61,12 @@
 
                 <div class="form-group">
                     <label for="image">صورة المنتج</label>
-                    <input type="file" id="image" name="image" accept="image/*">
-                    <small>اختر صورة من جهازك (JPG, PNG, GIF) - اختياري</small>
+                    <div class="image-upload-zone" id="image-upload-zone" onclick="document.getElementById('image').click()">
+                        <div class="image-upload-icon">🖼️</div>
+                        <p class="image-upload-text">اسحب الصورة هنا أو انقر للاختيار</p>
+                        <p class="image-upload-hint">JPG, PNG, GIF</p>
+                    </div>
+                    <input type="file" id="image" name="image" accept="image/*" style="display: none;">
                     <div id="image-preview" style="margin-top: 10px;"></div>
                 </div>
 
@@ -110,6 +114,26 @@
             color: var(--text-secondary);
             font-size: 0.9rem;
         }
+        .image-upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .image-upload-zone:hover {
+            border-color: var(--primary-color);
+            background: #f1f5f9;
+        }
+        .image-upload-zone.dragover {
+            border-color: var(--primary-color);
+            background: #eef2ff;
+        }
+        .image-upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+        .image-upload-text { font-weight: 600; color: var(--text-primary); margin: 0; }
+        .image-upload-hint { font-size: 0.85rem; color: var(--text-secondary); margin: 5px 0 0 0; }
     </style>
 
     
@@ -258,28 +282,36 @@
 
     
     <script>
-        // معاينة الصورة قبل الرفع
+        function showImagePreview(file) {
+            const preview = document.getElementById('image-preview');
+            const input = document.getElementById('image');
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.innerHTML = `
+                    <div style="text-align: center; padding: 10px; background: #ecfdf5; border-radius: 8px; border: 2px solid #10b981;">
+                        <img src="${e.target.result}" alt="معاينة" style="max-width: 200px; max-height: 200px; border-radius: 8px;">
+                        <p style="margin-top: 10px; color: #065f46; font-size: 0.9rem;">📁 ${file.name} (${(file.size / 1024).toFixed(2)} KB)</p>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+        }
         document.getElementById('image').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            const preview = document.getElementById('image-preview');
-            
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    preview.innerHTML = `
-                        <div style="text-align: center; padding: 10px; background: #f8fafc; border-radius: 8px;">
-                            <img src="${e.target.result}" alt="معاينة" 
-                                 style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid #e2e8f0;">
-                            <p style="margin-top: 10px; color: #64748b; font-size: 0.9rem;">
-                                📁 ${file.name} (${(file.size / 1024).toFixed(2)} KB)
-                            </p>
-                        </div>
-                    `;
-                };
-                reader.readAsDataURL(file);
-            } else {
-                preview.innerHTML = '';
-            }
+            if (file && file.type.startsWith('image/')) showImagePreview(file);
+            else if (!file) document.getElementById('image-preview').innerHTML = '';
+        });
+        const zone = document.getElementById('image-upload-zone');
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) showImagePreview(file);
         });
     </script>
 </body>

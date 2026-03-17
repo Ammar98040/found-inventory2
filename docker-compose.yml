@@ -1,0 +1,42 @@
+# Docker Compose for Dokploy / VPS deployment
+# استخدم هذا الملف مع Dokploy أو Docker Compose مباشرة
+
+version: '3.8'
+
+services:
+  web:
+    build: .
+    env_file: .env
+    environment:
+      - USE_SQLITE=False
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-inventory_db}
+      POSTGRES_USER: ${DB_USER:-inventory_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-inventory_user} -d ${DB_NAME:-inventory_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  media_data:
+  static_data:

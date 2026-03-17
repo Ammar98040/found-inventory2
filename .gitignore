@@ -34,8 +34,9 @@ logs/
 .env.local
 *.env
 
-# Database Backups
+# Database Backups (large files)
 *.sql
+full_db_backup.sql
 *.dump
 *.sqlite3
 *.backup

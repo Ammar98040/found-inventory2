@@ -14,6 +14,10 @@ from .forms import LoginForm, RegisterStaffForm, ProductForm, EditStaffForm
 from .ocr_service import analyze_invoice_image
 import json
 import logging
+import zipfile
+import io
+import os
+from pathlib import Path
 from django.core import serializers
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -45,6 +49,91 @@ def get_cached_or_set(cache_key, callable_func, timeout=300):
         data = callable_func()
         cache.set(cache_key, data, timeout)
     return data
+
+# Helper function لمعالجة المواقع من Excel
+def parse_location_string(location_str):
+    """
+    تحليل نص الموقع وإرجاع (row, column) أو (None, None)
+    
+    يدعم الصيغ التالية:
+    - "R1C5" أو "r1c5"
+    - "R1-C5" أو "R1_C5" أو "R1 C5"
+    - "1-5" أو "1,5" أو "1.5"
+    - "15" (يفترض R1C5)
+    
+    Args:
+        location_str: نص الموقع من Excel
+    
+    Returns:
+        tuple: (row_num, col_num) أو (None, None) إذا فشل التحليل
+    """
+    if not location_str:
+        return None, None
+    
+    import re
+    s = str(location_str).strip().upper()
+    
+    # إزالة الفواصل والمسافات
+    s = s.replace('-', ' ').replace('_', ' ').replace(',', ' ').replace('.', ' ')
+    s = re.sub(r"\s+", "", s)
+    
+    # محاولة 1: مطابقة صيغة R#C#
+    match = re.match(r"R(\d+)C(\d+)", s)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    
+    # محاولة 2: البحث عن أي رقمين في النص الأصلي (قبل التنظيف)
+    numbers = re.findall(r'\d+', location_str)
+    if len(numbers) >= 2:
+        return int(numbers[0]), int(numbers[1])
+    
+    # محاولة 3: رقمين متصلين فقط (مثل "15" = R1C5)
+    if s.isdigit() and len(s) >= 2:
+        row_num = int(s[0])
+        col_num = int(s[1:])
+        return row_num, col_num
+    
+    return None, None
+
+def get_or_create_location(row_num, col_num, warehouse=None):
+    """
+    الحصول على موقع أو إنشاءه إذا لم يكن موجوداً
+    
+    Args:
+        row_num: رقم الصف
+        col_num: رقم العمود
+        warehouse: المستودع (اختياري، سيستخدم الأول إذا لم يُحدد)
+    
+    Returns:
+        Location object أو None
+    """
+    if not row_num or not col_num:
+        return None
+    
+    if not warehouse:
+        warehouse = Warehouse.objects.first()
+    
+    if not warehouse:
+        logger.warning("لا يوجد مستودع لإنشاء الموقع")
+        return None
+    
+    # التحقق من أن الموقع ضمن حدود المستودع
+    if row_num > warehouse.rows_count or col_num > warehouse.columns_count:
+        logger.warning(f"الموقع R{row_num}C{col_num} خارج حدود المستودع ({warehouse.rows_count}x{warehouse.columns_count})")
+        return None
+    
+    # إنشاء أو الحصول على الموقع
+    location, created = Location.objects.get_or_create(
+        warehouse=warehouse,
+        row=row_num,
+        column=col_num,
+        defaults={'is_active': True}
+    )
+    
+    if created:
+        logger.info(f"تم إنشاء موقع جديد: R{row_num}C{col_num}")
+    
+    return location
 
 # Rate limiting - استخدام django-ratelimit إذا كان متاحاً
 try:
@@ -97,8 +186,9 @@ def confirm_products(request):
     if not isinstance(products_list, list) or len(products_list) == 0:
         return JsonResponse({'success': False, 'error': 'لم يتم تحديد أي منتجات للسحب'}, status=400)
 
-    # تجميع الطلبات لنفس المنتج لتفادي التكرارات
+    # تجميع الطلبات لنفس المنتج مع الحفاظ على ترتيب الإدخال
     aggregated_requests = {}
+    order_of_appearance = []  # ترتيب ظهور المنتجات كما أدخلها المستخدم
     invalid_items = []
     
     # التحقق من أن جميع المنتجات لها كمية أكبر من 0
@@ -125,6 +215,8 @@ def confirm_products(request):
             zero_quantity_items.append(number)
             continue
             
+        if number not in order_of_appearance:
+            order_of_appearance.append(number)
         aggregated_requests[number] = aggregated_requests.get(number, 0) + qty
 
     if invalid_items:
@@ -132,7 +224,7 @@ def confirm_products(request):
         
     if zero_quantity_items:
         items_str = ", ".join(zero_quantity_items)
-        example_str = f"{zero_quantity_items[0]}:5" if zero_quantity_items else "رقم_المنتج:الكمية"
+        example_str = f"{zero_quantity_items[0]}*5" if zero_quantity_items else "رقم_المنتج*الكمية"
         return JsonResponse({
             'success': False, 
             'error': f'يجب تحديد الكمية للمنتجات التالية: {items_str}. \nالرجاء البحث باستخدام الصيغة: {example_str}', 
@@ -142,7 +234,8 @@ def confirm_products(request):
     if not aggregated_requests:
          return JsonResponse({'success': False, 'error': 'لم يتم تحديد أي كميات للسحب'}, status=400)
 
-    product_numbers = sorted(aggregated_requests.keys())
+    # استخدام ترتيب الإدخال (لا ترتيب أبجدي)
+    product_numbers = order_of_appearance
 
     # قفل صفوف المنتجات بترتيب ثابت لتفادي الـ deadlocks
     products = list(
@@ -957,13 +1050,20 @@ def products_list(request):
         except (Container.DoesNotExist, ValueError):
             pass
     
-    search = request.GET.get('search', '')
+    search = request.GET.get('search', '').strip()
     if search:
+        from django.db.models import Q, Case, When, Value, IntegerField
         products = products.filter(
-            product_number__icontains=search
-        ) | products.filter(
-            name__icontains=search
+            Q(product_number__icontains=search) | Q(name__icontains=search)
         )
+        # ترتيب: التطابق التام (نفس الرقم) أولاً، ثم باقي النتائج
+        products = products.annotate(
+            exact_match=Case(
+                When(product_number__iexact=search, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField()
+            )
+        ).order_by('exact_match', 'product_number')
     
     # احسب العدد بعد الفلترة (إذا كان هناك بحث أو حاوية)
     filtered_count = products.count() if (search or container_id) else total_count
@@ -2389,10 +2489,10 @@ def export_products_excel(request):
         bottom=Side(style='thin')
     )
     
-    # رأس الجدول
-    headers = ['#', 'رقم المنتج', 'الاسم', 'الفئة', 'الكمية', 'الموقع', 'تاريخ الإضافة']
+    # رأس الجدول (مطابق لاستيراد Excel)
+    headers = ['رقم المنتج', 'الاسم', 'الصورة', 'السعر', 'الحاوية', 'الكمية (حبة)', 'الأماكن', 'تاريخ الإضافة']
     ws.append(headers)
-    
+
     # تنسيق رأس الجدول
     header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
     for col in range(1, len(headers) + 1):
@@ -2401,35 +2501,39 @@ def export_products_excel(request):
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
         cell.border = border
-    
-    # جلب المنتجات
-    products = Product.objects.all().order_by('product_number')
-    
+
+    # جلب المنتجات مع الحاوية والموقع
+    products = Product.objects.select_related('location', 'container').all().order_by('product_number')
+
     # إضافة البيانات
     for idx, product in enumerate(products, start=1):
-        location_text = product.location.full_location if product.location else 'لا يوجد موقع'
-        
+        location_text = product.location.full_location if product.location else ''
+        container_name = product.container.name if product.container else ''
+        image_val = product.image_url or (product.image.url if product.image else '') or ''
+        price_val = str(product.price) if product.price is not None else ''
+
         row_data = [
-            idx,
             product.product_number,
-            product.name,
-            product.category or '',
+            product.name or '',
+            image_val,
+            price_val,
+            container_name,
             product.quantity,
             location_text,
             product.created_at.strftime('%Y-%m-%d')
         ]
-        
+
         ws.append(row_data)
-        
+
         # تنسيق الصف
         for col in range(1, len(row_data) + 1):
             cell = ws.cell(row=idx + 1, column=col)
             cell.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
             cell.border = border
             cell.font = Font(name='Arial', size=11)
-    
+
     # ضبط عرض الأعمدة
-    column_widths = [5, 15, 25, 15, 15, 10, 12, 15]
+    column_widths = [18, 30, 40, 12, 18, 14, 12, 14]
     for col, width in enumerate(column_widths, start=1):
         ws.column_dimensions[get_column_letter(col)].width = width
     
@@ -2578,12 +2682,14 @@ def update_location_notes(request):
         })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @exclude_maintenance
-@login_required
 def inspect_backup(request):
     """تحليل ملف النسخ الاحتياطي وإرجاع تقرير تفصيلي قبل الاستيراد"""
+    # التحقق من تسجيل الدخول
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات'})
+    
     try:
         uploaded_file = request.FILES.get('backup_file')
         inline_json = request.POST.get('backup_json')
@@ -2614,6 +2720,8 @@ def inspect_backup(request):
                         section = 'user_activity_logs'
                     elif name == 'auditlog':
                         section = 'audit_logs'
+                    elif name == 'user' and 'auth' in (model or ''):
+                        section = 'users'
                     grouped.setdefault(section, []).append(item)
             data = {'export_info': {'description': 'array_payload_transformed'}, **grouped}
 
@@ -2697,9 +2805,14 @@ def inspect_backup(request):
         present = set([s['name'] for s in sections if s['count'] > 0])
         suggested_dependencies = {}
         if 'products' in present:
-            suggested_dependencies['products'] = ['locations', 'warehouses']
+            deps = ['locations', 'warehouses']
+            if 'containers' in present:
+                deps.append('containers')
+            suggested_dependencies['products'] = deps
         if 'locations' in present:
             suggested_dependencies['locations'] = ['warehouses']
+        if 'user_profiles' in present and 'users' in present:
+            suggested_dependencies['user_profiles'] = ['users']
         if 'audit_logs' in present:
             suggested_dependencies['audit_logs'] = ['products', 'locations', 'warehouses']
 
@@ -2721,13 +2834,15 @@ def inspect_backup(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @transaction.atomic
 @exclude_maintenance
-@login_required
 def reset_environment(request):
     """حذف كل البيانات لتجهيز بيئة نظيفة (يستثني المشرفين)"""
+    # التحقق من تسجيل الدخول
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات'})
+    
     try:
         # حذف بالترتيب للتأكد من العلاقات
         UserActivityLog.objects.all().delete()
@@ -2742,46 +2857,49 @@ def reset_environment(request):
         return JsonResponse({'success': True, 'message': 'تم تهيئة بيئة نظيفة بنجاح'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+def _build_backup_data(include_images_count=0):
+    """بناء بيانات النسخ الاحتياطي الكاملة - موحّدة لـ JSON و ZIP"""
+    return {
+        'export_info': {
+            'date': datetime.now().isoformat(),
+            'version': '2.1',
+            'description': 'نسخ احتياطي كامل - نظام إدارة المستودع',
+            'sections': [
+                'warehouses', 'locations', 'containers', 'products',
+                'audit_logs', 'orders', 'returns',
+                'users', 'user_profiles', 'user_activity_logs'
+            ],
+        },
+        'warehouses': json.loads(serializers.serialize('json', Warehouse.objects.all())),
+        'locations': json.loads(serializers.serialize('json', Location.objects.all())),
+        'containers': json.loads(serializers.serialize('json', Container.objects.all())),
+        'products': json.loads(serializers.serialize('json', Product.objects.all())),
+        'audit_logs': json.loads(serializers.serialize('json', AuditLog.objects.all())),
+        'orders': json.loads(serializers.serialize('json', Order.objects.all())),
+        'returns': json.loads(serializers.serialize('json', ProductReturn.objects.all())),
+        'users': json.loads(serializers.serialize('json', User.objects.all())),
+        'user_profiles': json.loads(serializers.serialize('json', UserProfile.objects.all())),
+        'user_activity_logs': json.loads(serializers.serialize('json', UserActivityLog.objects.all())),
+        'backup_stats': {
+            'warehouses_count': Warehouse.objects.count(),
+            'locations_count': Location.objects.count(),
+            'containers_count': Container.objects.count(),
+            'products_count': Product.objects.count(),
+            'audit_logs_count': AuditLog.objects.count(),
+            'orders_count': Order.objects.count(),
+            'returns_count': ProductReturn.objects.count(),
+            'users_count': User.objects.count(),
+            'user_profiles_count': UserProfile.objects.count(),
+            'user_activity_logs_count': UserActivityLog.objects.count(),
+            'images_count': include_images_count,
+        }
+    }
+
+
 def export_backup(request):
     """تصدير النسخ الاحتياطي الشامل - يشمل جميع البيانات والأنشطة"""
     try:
-        # جمع جميع البيانات بشكل شامل
-        data = {
-            'export_info': {
-                'date': datetime.now().isoformat(),
-                'version': '2.0',
-                'description': 'نسخ احتياطي شامل كامل من نظام إدارة المستودع - يشمل جميع البيانات والعمليات والأنشطة'
-            },
-            # البيانات الأساسية
-            'warehouses': json.loads(serializers.serialize('json', Warehouse.objects.all())),
-            'locations': json.loads(serializers.serialize('json', Location.objects.all())),
-            'products': json.loads(serializers.serialize('json', Product.objects.all())),
-            
-            # سجلات العمليات
-            'audit_logs': json.loads(serializers.serialize('json', AuditLog.objects.all())),
-            'orders': json.loads(serializers.serialize('json', Order.objects.all())),
-            'returns': json.loads(serializers.serialize('json', ProductReturn.objects.all())),
-            
-        # التقارير (تمت إزالة التقارير اليومية)
-            
-            # بيانات المستخدمين والأنشطة (استثناء admin من UserProfile لتجنب التكرار)
-            # نحذف UserProfile للمستخدمين الذين هم superuser (admin) لتجنب التكرار عند الاستيراد
-            'user_profiles': json.loads(serializers.serialize('json', UserProfile.objects.exclude(user__is_superuser=True))),
-            'user_activity_logs': json.loads(serializers.serialize('json', UserActivityLog.objects.all())),
-            
-            # إحصائيات النسخ الاحتياطي
-            'backup_stats': {
-                'warehouses_count': Warehouse.objects.count(),
-                'locations_count': Location.objects.count(),
-                'products_count': Product.objects.count(),
-                'audit_logs_count': AuditLog.objects.count(),
-                'orders_count': Order.objects.count(),
-                'returns_count': ProductReturn.objects.count(),
-                
-                'user_profiles_count': UserProfile.objects.exclude(user__is_superuser=True).count(),  # عدد UserProfiles بدون admin
-                'user_activity_logs_count': UserActivityLog.objects.count(),
-            }
-        }
+        data = _build_backup_data(include_images_count=0)
         
         # إنشاء ملف JSON
         json_data = json.dumps(data, ensure_ascii=False, indent=2)
@@ -2801,12 +2919,60 @@ def export_backup(request):
         })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @exclude_maintenance
-@login_required
+def export_backup_full(request):
+    """تصدير نسخة احتياطية كاملة (JSON + صور المنتجات) كملف ZIP"""
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'الرجاء تسجيل الدخول'})
+    try:
+        media_root = Path(getattr(settings, 'MEDIA_ROOT', None) or (settings.BASE_DIR / 'media'))
+        products_dir = media_root / 'products'
+        images_count = 0
+        if products_dir.exists():
+            images_count = sum(1 for f in products_dir.rglob('*') if f.is_file())
+        data = _build_backup_data(include_images_count=images_count)
+        json_data = json.dumps(data, ensure_ascii=False, indent=2)
+        buffer = io.BytesIO()
+        image_files = []
+        if products_dir.exists():
+            for f in products_dir.rglob('*'):
+                if f.is_file():
+                    image_files.append(f.relative_to(products_dir).as_posix())
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('data.json', json_data.encode('utf-8'))
+            manifest = {
+                'backup_type': 'full_with_images',
+                'date': data['export_info']['date'],
+                'version': data['export_info']['version'],
+                'stats': data['backup_stats'],
+                'sections': data['export_info']['sections'],
+                'images_in_zip': len(image_files),
+                'image_paths': sorted(image_files),
+            }
+            zf.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
+            for f in (products_dir / p for p in image_files):
+                if f.exists():
+                    arcname = 'media/products/' + f.relative_to(products_dir).as_posix()
+                    zf.write(f, arcname)
+        buffer.seek(0)
+        filename = f'backup_full_with_images_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
+        response = HttpResponse(buffer.getvalue(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        logger.error(f'Error in export_backup_full: {str(e)}')
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@require_http_methods(["POST"])
+@exclude_maintenance
 def import_backup(request):
     """استيراد النسخ الاحتياطي"""
+    # التحقق من تسجيل الدخول
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات'})
+    
     try:
         uploaded_file = request.FILES.get('backup_file')
         inline_json = request.POST.get('backup_json')
@@ -2815,6 +2981,24 @@ def import_backup(request):
         
         filename = getattr(uploaded_file, 'name', '') if uploaded_file else 'inline.json'
         raw_bytes = uploaded_file.read() if uploaded_file else inline_json.encode('utf-8', errors='ignore')
+
+        # إذا كان الملف ZIP (نسخة احتياطية مع الصور)
+        if zipfile.is_zipfile(io.BytesIO(raw_bytes)):
+            media_root = Path(getattr(settings, 'MEDIA_ROOT', None) or (settings.BASE_DIR / 'media'))
+            with zipfile.ZipFile(io.BytesIO(raw_bytes), 'r') as zf:
+                if 'data.json' in zf.namelist():
+                    raw_bytes = zf.read('data.json')
+                else:
+                    return JsonResponse({'success': False, 'error': 'ملف ZIP غير صالح: data.json مفقود'})
+                # استخراج الصور إلى مجلد media
+                for name in zf.namelist():
+                    if name.startswith('media/products/') and not name.endswith('/'):
+                        rel = name.replace('media/products/', '')
+                        dest = media_root / 'products' / rel
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(name) as src, open(dest, 'wb') as dst:
+                            dst.write(src.read())
+
         data, parse_meta = _load_backup_data(raw_bytes, filename)
         if data is None:
             msg = 'الملف غير صالح (JSON)'
@@ -2836,9 +3020,11 @@ def import_backup(request):
                         section = 'user_activity_logs'
                     elif name == 'auditlog':
                         section = 'audit_logs'
+                    elif name == 'user' and 'auth' in (model or ''):
+                        section = 'users'
                     grouped.setdefault(section, []).append(item)
             data = {'export_info': {'description': 'array_payload_transformed'}, **grouped}
-        
+
         # تهيئة export_info إن كان مفقوداً
         if 'export_info' not in data or not isinstance(data.get('export_info'), dict):
             data['export_info'] = {
@@ -2878,11 +3064,15 @@ def import_backup(request):
             return JsonResponse({'success': False, 'error': 'أخطاء في بنية الملف', 'details': schema_errors})
         
         # إضافة التبعيات اللازمة تلقائياً لتجنب أخطاء المراجع
-        # المنتجات تحتاج الأماكن والمستودعات، والأماكن تحتاج مستودعات، والسجلات تحتاج المنتجات
+        # المنتجات تحتاج الأماكن والمستودعات والحاويات، والأماكن تحتاج مستودعات، والسجلات تحتاج المنتجات
         if 'products' in selected_sections:
             selected_sections.update(['locations', 'warehouses'])
+            if 'containers' in data:
+                selected_sections.add('containers')
         if 'locations' in selected_sections:
             selected_sections.add('warehouses')
+        if 'user_profiles' in selected_sections and 'users' in data:
+            selected_sections.add('users')
         if 'audit_logs' in selected_sections:
             selected_sections.update(['products', 'locations', 'warehouses'])
         
@@ -2902,6 +3092,8 @@ def import_backup(request):
                     Order.objects.all().delete()
                 if 'products' in selected_sections:
                     Product.objects.all().delete()
+                if 'containers' in selected_sections:
+                    Container.objects.all().delete()
                 if 'locations' in selected_sections:
                     Location.objects.all().delete()
                 if 'warehouses' in selected_sections:
@@ -2916,8 +3108,9 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(data['warehouses']))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['warehouses'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['warehouses'] += 1
                     except Exception as e:
                         import_errors.append(f"warehouses[{i}]: {str(e)}")
             
@@ -2925,62 +3118,140 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(data['locations']))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['locations'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['locations'] += 1
                     except Exception as e:
                         import_errors.append(f"locations[{i}]: {str(e)}")
-            
+
+            if 'containers' in selected_sections and 'containers' in data:
+                objects = serializers.deserialize('json', json.dumps(data['containers']))
+                for i, obj in enumerate(objects):
+                    try:
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['containers'] = import_counts.get('containers', 0) + 1
+                    except Exception as e:
+                        import_errors.append(f"containers[{i}]: {str(e)}")
+
             if 'products' in selected_sections and 'products' in data:
                 objects = serializers.deserialize('json', json.dumps(data['products']))
                 for i, obj in enumerate(objects):
                     try:
-                        instance = obj.object
-                        if avoid_duplicates:
-                            pn = getattr(instance, 'product_number', None)
-                            if pn:
-                                existing = Product.objects.filter(product_number=pn).first()
-                                if existing:
-                                    instance.pk = existing.pk
-                        instance.save()
-                        import_counts['products'] += 1
+                        with transaction.atomic():
+                            instance = obj.object
+                            # إصلاح مراجع FK المفقودة (مثلاً: نسخة قديمة بدون containers)
+                            if getattr(instance, 'location_id', None) and not Location.objects.filter(pk=instance.location_id).exists():
+                                instance.location_id = None
+                            if getattr(instance, 'container_id', None) and not Container.objects.filter(pk=instance.container_id).exists():
+                                instance.container_id = None
+                            if avoid_duplicates:
+                                pn = getattr(instance, 'product_number', None)
+                                if pn:
+                                    existing = Product.objects.filter(product_number=pn).first()
+                                    if existing:
+                                        instance.pk = existing.pk
+                            instance.save()
+                            import_counts['products'] += 1
                     except Exception as e:
                         import_errors.append(f"products[{i}]: {str(e)}")
             
-            # 2. ملفات المستخدمين (معالجة ذكية للمستخدمين المفقودين)
+            # 2. المستخدمون (قبل user_profiles لضمان ظهور الأسماء الصحيحة)
+            if 'users' in selected_sections and 'users' in data:
+                for i, user_data in enumerate(data['users']):
+                    try:
+                        username = user_data.get('fields', {}).get('username', '')
+                        if username in ('ammar', 'admin') or user_data.get('fields', {}).get('is_superuser'):
+                            continue
+                        with transaction.atomic():
+                            for obj in serializers.deserialize('json', json.dumps([user_data])):
+                                obj.save()
+                                import_counts['users'] = import_counts.get('users', 0) + 1
+                                break
+                    except Exception as e:
+                        import_errors.append(f"users[{i}]: {str(e)}")
+
+            # 3. ملفات المستخدمين (معالجة ذكية للمستخدمين المفقودين)
             if 'user_profiles' in selected_sections and 'user_profiles' in data:
                 # التأكد من وجود مستخدم النظام الافتراضي
                 system_user, _ = User.objects.get_or_create(username='system', defaults={'email': 'system@local', 'is_active': False})
-                
+                # بناء خريطة user_id -> بيانات المستخدم من قسم users إن وُجد
+                users_map = {}
+                if 'users' in data:
+                    for u in data['users']:
+                        if isinstance(u, dict) and 'pk' in u and 'fields' in u:
+                            users_map[u['pk']] = u['fields']
+
                 for i, profile_data in enumerate(data['user_profiles']):
                     try:
-                        # استخراج user_id من البيانات
-                        user_id = None
-                        if 'fields' in profile_data:
-                            user_id = profile_data['fields'].get('user') or profile_data['fields'].get('user_id')
-                        
-                        if not user_id:
-                            continue
+                        with transaction.atomic():
+                            # استخراج user_id من البيانات
+                            user_id = None
+                            if 'fields' in profile_data:
+                                user_id = profile_data['fields'].get('user') or profile_data['fields'].get('user_id')
 
-                        # التحقق من وجود المستخدم
-                        if not User.objects.filter(pk=user_id).exists():
-                            # إذا كان المستخدم غير موجود، نربط الملف بمستخدم النظام أو نتجاوزه
-                            # هنا سنقوم بإنشاء مستخدم وهمي للحفاظ على تكامل البيانات
-                            try:
-                                # محاولة استرداد اسم المستخدم القديم إذا كان متاحاً في مكان ما، أو استخدام ID
-                                dummy_username = f"imported_user_{user_id}"
-                                User.objects.create(pk=user_id, username=dummy_username, is_active=False)
-                            except Exception:
-                                # إذا فشل إنشاء المستخدم بنفس الـ ID (ربما تعارض)، نستخدم مستخدم النظام
-                                profile_data['fields']['user'] = system_user.id
-                        
-                        # الآن نحاول الاستيراد
-                        objects = serializers.deserialize('json', json.dumps([profile_data]))
-                        for obj in objects:
-                            # حماية: لا تقم بتحديث ملف المسؤول ammar إذا كان موجوداً في النسخة الاحتياطية بمعلومات قديمة
-                            if obj.object.user.username == 'ammar':
+                            if not user_id:
                                 continue
-                            obj.save()
-                            import_counts['user_profiles'] += 1
+
+                            # التحقق من وجود المستخدم
+                            if not User.objects.filter(pk=user_id).exists():
+                                # استخراج الاسم الحقيقي من قسم users إن وُجد
+                                real_username = None
+                                if user_id in users_map:
+                                    real_username = users_map[user_id].get('username')
+                                if real_username:
+                                    try:
+                                        uf = users_map[user_id]
+                                        new_user = User(
+                                            pk=user_id,
+                                            username=real_username,
+                                            email=uf.get('email', ''),
+                                            is_active=uf.get('is_active', True),
+                                            is_staff=uf.get('is_staff', False),
+                                            is_superuser=uf.get('is_superuser', False),
+                                            first_name=uf.get('first_name', ''),
+                                            last_name=uf.get('last_name', ''),
+                                        )
+                                        pwd = uf.get('password')
+                                        if pwd and len(pwd) >= 20:
+                                            new_user.password = pwd
+                                        else:
+                                            new_user.set_unusable_password()
+                                        new_user.save()
+                                    except Exception:
+                                        User.objects.create(pk=user_id, username=real_username, is_active=False)
+                                else:
+                                    try:
+                                        User.objects.create(pk=user_id, username=f"imported_user_{user_id}", is_active=False)
+                                    except Exception:
+                                        profile_data['fields']['user'] = system_user.id
+
+                            # الآن نحاول الاستيراد (معالجة تكرار user_id - OneToOne)
+                            existing_profile = UserProfile.objects.filter(user_id=user_id).first()
+                            if existing_profile:
+                                # تحديث الموجود بدل إنشاء جديد (تجنب UNIQUE constraint)
+                                fields = profile_data.get('fields', {})
+                                existing_profile.user_type = fields.get('user_type', existing_profile.user_type)
+                                existing_profile.phone = fields.get('phone', existing_profile.phone)
+                                existing_profile.notes = fields.get('notes', existing_profile.notes)
+                                existing_profile.is_active = fields.get('is_active', existing_profile.is_active)
+                                existing_profile.save()
+                                # إصلاح الاسم إذا كان imported_user_X والنسخة تحتوي على الاسم الحقيقي
+                                if user_id in users_map and existing_profile.user.username.startswith('imported_user_'):
+                                    real_username = users_map[user_id].get('username')
+                                    if real_username:
+                                        existing_profile.user.username = real_username
+                                        existing_profile.user.first_name = users_map[user_id].get('first_name', '')
+                                        existing_profile.user.last_name = users_map[user_id].get('last_name', '')
+                                        existing_profile.user.save()
+                                import_counts['user_profiles'] += 1
+                            else:
+                                objects = serializers.deserialize('json', json.dumps([profile_data]))
+                                for obj in objects:
+                                    if obj.object.user.username == 'ammar':
+                                        continue
+                                    obj.save()
+                                    import_counts['user_profiles'] += 1
                             
                     except Exception as e:
                         import_errors.append(f"user_profiles[{i}]: {str(e)}")
@@ -2991,8 +3262,9 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(data['audit_logs']))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['audit_logs'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['audit_logs'] += 1
                     except Exception as e:
                         import_errors.append(f"audit_logs[{i}]: {str(e)}")
             
@@ -3000,8 +3272,9 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(data['orders']))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['orders'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['orders'] += 1
                     except Exception as e:
                         import_errors.append(f"orders[{i}]: {str(e)}")
             
@@ -3009,8 +3282,9 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(data['returns']))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['returns'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['returns'] += 1
                     except Exception as e:
                         import_errors.append(f"returns[{i}]: {str(e)}")
             
@@ -3034,8 +3308,9 @@ def import_backup(request):
                 objects = serializers.deserialize('json', json.dumps(logs_data))
                 for i, obj in enumerate(objects):
                     try:
-                        obj.save()
-                        import_counts['user_activity_logs'] += 1
+                        with transaction.atomic():
+                            obj.save()
+                            import_counts['user_activity_logs'] += 1
                     except Exception as e:
                         import_errors.append(f"user_activity_logs[{i}]: {str(e)}")
         
@@ -3085,13 +3360,15 @@ def data_deletion_page(request):
     })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @transaction.atomic
 @exclude_maintenance
-@login_required
 def delete_data(request):
     """حذف البيانات المحددة"""
+    # التحقق من تسجيل الدخول
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'الرجاء تسجيل الدخول أو تأكد من الصلاحيات'})
+    
     try:
         data = json.loads(request.body)
         # التحقق من كلمة المرور
@@ -4509,26 +4786,46 @@ def upload_excel_file(request):
             'headers': headers,
             'data': data
         }
-        
-        total_rows = len(data)
-        # تم تحديث الحد المسموح به للمعاينة ليشمل كامل الملف
-        # هذا يضمن أن المستخدم يرى ويعالج جميع البيانات، خاصة للملفات المتوسطة الحجم (مثل 420 منتج)
-        preview_limit = total_rows
-        if total_rows > 5000:
-            # تنبيه: للملفات الكبيرة جداً، قد يكون الأداء بطيئاً في المتصفح
-            # لكننا سنسمح بذلك لضمان الدقة
-            preview_limit = total_rows
-        
+
+        total_rows     = len(data)
+        detected       = _auto_detect_columns(headers)
+
         return JsonResponse({
-            'success': True,
-            'headers': headers,
-            'data': data[:min(preview_limit, 50)],
-            'total_rows': total_rows,
-            'preview_limit': preview_limit
+            'success':          True,
+            'headers':          headers,
+            'data':             data[:50],
+            'total_rows':       total_rows,
+            'preview_limit':    total_rows,
+            'detected_mapping': detected,
         })
-        
+
     except Exception as e:
         return JsonResponse({'error': f'خطأ في قراءة الملف: {str(e)}'}, status=500)
+
+
+def _auto_detect_columns(headers):
+    """اكتشاف تلقائي لأعمدة Excel بناءً على أسماء الترويسات"""
+    rules = {
+        'product_number': ['رقم المنتج', 'رقم', 'model', 'product_number', 'sku', 'code', 'barcode', 'product number'],
+        'name':           ['اسم المنتج', 'الاسم', 'اسم', 'name', 'product name', 'item'],
+        'image':          ['صورة', 'الصورة', 'image', 'img', 'photo', 'image_url', 'picture', 'url'],
+        'price':          ['السعر', 'سعر', 'price', 'cost', 'unit price', 'unit_price'],
+        'container':      ['الحاوية', 'حاوية', 'container', 'box', 'bin', 'group', 'batch'],
+        'total_quantity': ['الكمية', 'كمية', 'qty', 'quantity', 'total', 'الاجمالي', 'إجمالي', 'count', 'stock', 'amount', 't.qty', 'tqty'],
+        'location':       ['الموقع', 'موقع', 'location', 'الأماكن', 'أماكن', 'مكان', 'place', 'shelf', 'rack', 'r', 'loc'],
+        'created_at':     ['تاريخ الإضافة', 'تاريخ', 'date', 'created', 'added', 'created_at', 'add_date'],
+    }
+    mapping = {}
+    for idx, header in enumerate(headers):
+        h = (header or '').lower().strip()
+        for field, keywords in rules.items():
+            if field in mapping:
+                continue
+            for kw in keywords:
+                if kw.lower() == h or kw.lower() in h or h in kw.lower():
+                    mapping[field] = idx
+                    break
+    return mapping
 
 
 @login_required
@@ -4537,192 +4834,149 @@ def preview_excel_data(request):
     """معاينة البيانات من Excel قبل الإضافة"""
     if request.method != 'POST':
         return JsonResponse({'error': 'طريقة غير مسموحة'}, status=405)
-    
+
     try:
-        import json
-        data = json.loads(request.body)
-        
-        # الحصول على البيانات من الجلسة
+        import json as _json
+        data = _json.loads(request.body)
+
         excel_data = request.session.get('excel_data')
         if not excel_data:
             return JsonResponse({'error': 'لم يتم العثور على بيانات Excel'}, status=400)
-        
-        # الحصول على تحديد الأعمدة
+
         column_mapping = data.get('column_mapping', {})
-        
-        # التحقق من الأعمدة المطلوبة
-        required_fields = ['product_number', 'total_quantity']
+
+        # الحقول الإلزامية
+        required_fields = ['product_number', 'name', 'total_quantity']
         for field in required_fields:
             if field not in column_mapping or column_mapping[field] is None:
                 return JsonResponse({'error': f'يجب تحديد عمود {field}'}, status=400)
-        
-        headers = excel_data['headers']
-        total_rows = len(excel_data['data'])
-        
-        # السماح بمعاينة كافة الصفوف
-        preview_limit = total_rows
-        
-        rows = excel_data['data'][:preview_limit]
-        
-        # التحقق من وجود أعمدة اختيارية
-        has_final_model = 'final_model' in column_mapping and column_mapping['final_model'] is not None
-        has_name = 'name' in column_mapping and column_mapping['name'] is not None
-        has_category = 'category' in column_mapping and column_mapping['category'] is not None
-        
-        print(f"[DEBUG] Total rows in Excel: {len(rows)}")
-        print(f"[DEBUG] Has FINAL_MODEL column: {has_final_model}")
-        
-        # معاينة البيانات
+
+        rows       = excel_data['data']
+        total_rows = len(rows)
+
+        # أعمدة اختيارية
+        has_image      = 'image'      in column_mapping and column_mapping['image']      is not None
+        has_price      = 'price'      in column_mapping and column_mapping['price']      is not None
+        has_container  = 'container'  in column_mapping and column_mapping['container']  is not None
+        has_location   = 'location'   in column_mapping and column_mapping['location']   is not None
+        has_created_at = 'created_at' in column_mapping and column_mapping['created_at'] is not None
+
+        def _cell(row, key, default=None):
+            try:
+                idx = column_mapping.get(key)
+                if idx is None:
+                    return default
+                v = row[idx]
+                return str(v).strip() if v is not None else default
+            except (IndexError, KeyError):
+                return default
+
         preview_data = []
-        
+
         for row_idx, row in enumerate(rows, start=2):
             try:
-                # التحقق من أن الصف ليس فارغاً
-                if not any(cell for cell in row if cell is not None):
+                if not any(c for c in row if c is not None):
                     continue
-                
-                # استخراج البيانات
+
+                product_number = _cell(row, 'product_number')
+                name_val       = _cell(row, 'name')
+
+                # استخراج الكمية
                 try:
-                    product_number_cell = row[column_mapping['product_number']]
-                    product_number = str(product_number_cell).strip() if product_number_cell is not None else None
-                    
-                    # تخطي صفوف العناوين
-                    if product_number and product_number.upper() in ['MODEL', 'PRODUCT', 'رقم المنتج', 'PRODUCT NUMBER']:
-                        continue
-                except (IndexError, KeyError):
-                    product_number = None
-                
-                # استخراج FINAL_MODEL إذا كان موجوداً
-                final_model = None
-                if has_final_model:
-                    try:
-                        final_model_cell = row[column_mapping['final_model']]
-                        final_model = str(final_model_cell).strip() if final_model_cell is not None else None
-                        
-                        # تخطي صفوف العناوين
-                        if final_model and final_model.upper() in ['FINAL MODEL', 'FINAL_MODEL', 'رقم المنتج النهائي']:
-                            continue
-                    except (IndexError, KeyError):
-                        final_model = None
-                
-                # إجمالي الكمية (مطلوب)
-                try:
-                    total_cell = row[column_mapping['total_quantity']]
-                    if total_cell and isinstance(total_cell, (int, float)):
-                        total_quantity = int(total_cell)
-                    elif total_cell and str(total_cell).replace('.', '').replace('-', '').isdigit():
-                        total_quantity = int(float(total_cell))
+                    tq_cell = row[column_mapping['total_quantity']]
+                    if isinstance(tq_cell, (int, float)):
+                        total_quantity = int(tq_cell)
+                    elif tq_cell and str(tq_cell).replace('.', '').replace('-', '').isdigit():
+                        total_quantity = int(float(tq_cell))
                     else:
                         total_quantity = None
                 except (IndexError, KeyError, ValueError):
                     total_quantity = None
-                
-                # حقول اختيارية: الاسم والفئة
-                name_val = None
-                category_val = None
-                try:
-                    if 'name' in column_mapping and column_mapping['name'] is not None:
-                        nc = row[column_mapping['name']]
-                        name_val = str(nc).strip() if nc is not None else None
-                except Exception:
-                    name_val = None
-                try:
-                    if 'category' in column_mapping and column_mapping['category'] is not None:
-                        cc = row[column_mapping['category']]
-                        category_val = str(cc).strip() if cc is not None else None
-                except Exception:
-                    category_val = None
-                
-                # الموقع
-                location_str = None
-                try:
-                    if 'location' in column_mapping and column_mapping['location'] is not None:
-                        loc_cell = row[column_mapping['location']]
-                        location_str = str(loc_cell).strip() if loc_cell else None
-                except (IndexError, KeyError):
-                    location_str = None
-                
-                # تحديد رقم المنتج النهائي
-                # إذا كان هناك عمود FINAL_MODEL، استخدمه مباشرة
-                if has_final_model and final_model:
-                    final_product_number = final_model
-                else:
-                    # إذا لم يكن هناك FINAL_MODEL، استخدم product_number
-                    final_product_number = product_number
-                
-                # التحقق من البيانات
-                if not final_product_number or total_quantity is None:
-                    error_details = []
-                    if not final_product_number:
-                        error_details.append('رقم المنتج فارغ')
-                    if total_quantity is None:
-                        error_details.append('الإجمالي فارغ')
-                    
+
+                # حقول اختيارية
+                image_val      = _cell(row, 'image')      if has_image      else None
+                price_val      = _cell(row, 'price')      if has_price      else None
+                container_val  = _cell(row, 'container')  if has_container  else None
+                location_str   = _cell(row, 'location')   if has_location   else None
+                created_at_val = _cell(row, 'created_at') if has_created_at else None
+
+                # التحقق من الإلزامي
+                errors = []
+                if not product_number: errors.append('رقم المنتج فارغ')
+                if not name_val:       errors.append('الاسم فارغ')
+                if total_quantity is None: errors.append('الكمية فارغة')
+
+                if errors:
                     preview_data.append({
-                        'row': row_idx,
-                        'original_number': str(product_number_cell).strip() if product_number_cell and str(product_number_cell).strip() else 'فارغ',
-                        'final_number': final_product_number or 'فارغ',
+                        'row':            row_idx,
+                        'product_number': product_number or 'فارغ',
+                        'name':           name_val or 'فارغ',
+                        'image_url':      image_val,
+                        'price':          price_val,
+                        'container_name': container_val,
                         'total_quantity': total_quantity or 0,
-                        'location': location_str or '',
-                        'status': 'error',
-                        'message': f'⚠️ {" | ".join(error_details)}'
+                        'location':       location_str or '',
+                        'created_at':     created_at_val or '',
+                        'status':         'error',
+                        'message':        '⚠️ ' + ' | '.join(errors),
+                        'original_number': product_number or 'فارغ',
+                        'final_number':    product_number or 'فارغ',
                     })
                     continue
-                
+
                 # التحقق من وجود المنتج
-                existing_product = Product.objects.filter(product_number=final_product_number).first()
-                
-                status = 'new'
-                message = 'منتج جديد'
-                
-                if existing_product:
-                    status = 'exists'
-                    message = f'موجود مسبقاً (الكمية الحالية: {existing_product.quantity})'
-                
-                result_row = {
-                    'row': row_idx,
-                    'original_number': str(product_number_cell).strip() if product_number_cell else product_number,
-                    'final_number': final_product_number,
+                existing = Product.objects.filter(product_number=product_number).first()
+                status  = 'exists' if existing else 'new'
+                message = f'موجود مسبقاً (الكمية الحالية: {existing.quantity})' if existing else 'منتج جديد'
+
+                preview_data.append({
+                    'row':            row_idx,
+                    'product_number': product_number,
+                    'name':           name_val or '',
+                    'image_url':      image_val,
+                    'price':          price_val,
+                    'container_name': container_val,
                     'total_quantity': total_quantity,
-                    'location': location_str or '',
-                    'status': status,
-                    'message': message
-                }
-                if has_name:
-                    try:
-                        name_cell = row[column_mapping['name']]
-                        result_row['name'] = str(name_cell).strip() if name_cell is not None else ''
-                    except Exception:
-                        result_row['name'] = ''
-                if has_category:
-                    try:
-                        category_cell = row[column_mapping['category']]
-                        result_row['category'] = str(category_cell).strip() if category_cell is not None else ''
-                    except Exception:
-                        result_row['category'] = ''
-                preview_data.append(result_row)
-                
+                    'location':       location_str or '',
+                    'created_at':     created_at_val or '',
+                    'status':         status,
+                    'message':        message,
+                    'original_number': product_number,
+                    'final_number':    product_number,
+                })
+
             except Exception as e:
                 preview_data.append({
-                    'row': row_idx,
-                    'original_number': 'N/A',
-                    'final_number': 'N/A',
-                    'total_quantity': 0,
-                    'location': '',
-                    'status': 'error',
-                    'message': str(e)
+                    'row': row_idx, 'product_number': 'N/A', 'name': '',
+                    'image_url': None, 'price': None, 'container_name': None,
+                    'total_quantity': 0, 'location': '', 'status': 'error',
+                    'message': str(e), 'original_number': 'N/A', 'final_number': 'N/A',
                 })
-        
-        print(f"[DEBUG] Preview data count: {len(preview_data)}")
-        
+
+        # اكتشاف الحاويات الجديدة (غير الموجودة في قاعدة البيانات)
+        new_containers = []
+        if has_container:
+            excel_containers = set()
+            for row in rows:
+                try:
+                    v = row[column_mapping['container']]
+                    if v:
+                        excel_containers.add(str(v).strip())
+                except (IndexError, KeyError):
+                    pass
+            existing_names = set(Container.objects.filter(
+                name__in=excel_containers
+            ).values_list('name', flat=True))
+            new_containers = sorted(excel_containers - existing_names)
+
         return JsonResponse({
-            'success': True,
-            'preview': preview_data,
-            'total_rows': len(preview_data),
-            'preview_limit': preview_limit,
-            'full_rows': total_rows
+            'success':        True,
+            'preview':        preview_data,
+            'total_rows':     len(preview_data),
+            'full_rows':      total_rows,
+            'new_containers': new_containers,
         })
-        
+
     except Exception as e:
         return JsonResponse({'error': f'خطأ في المعاينة: {str(e)}'}, status=500)
 
@@ -4734,310 +4988,160 @@ def process_excel_data(request):
     """معالجة البيانات من Excel وإضافتها للنظام"""
     if request.method != 'POST':
         return JsonResponse({'error': 'طريقة غير مسموحة'}, status=405)
-    
+
     try:
-        import json
-        data = json.loads(request.body)
-        
-        # الحصول على البيانات من الجلسة
-        excel_data = request.session.get('excel_data')
+        import json as _json
+        from decimal import Decimal, InvalidOperation
+
+        data               = _json.loads(request.body)
+        excel_data         = request.session.get('excel_data')
         if not excel_data:
             return JsonResponse({'error': 'لم يتم العثور على بيانات Excel'}, status=400)
-        
-        # الحصول على تحديد الأعمدة
-        column_mapping = data.get('column_mapping', {})
-        conflict_resolution = data.get('conflict_resolution', 'skip')  # skip, update, replace
-        edited_data = data.get('edited_data', None)  # البيانات المعدلة من المعاينة
-        
-        # التحقق من الأعمدة المطلوبة
-        required_fields = ['product_number', 'total_quantity']
+
+        column_mapping     = data.get('column_mapping', {})
+        conflict_resolution = data.get('conflict_resolution', 'skip')
+        edited_data        = data.get('edited_data', None)
+
+        required_fields = ['product_number', 'name', 'total_quantity']
         for field in required_fields:
             if field not in column_mapping or column_mapping[field] is None:
                 return JsonResponse({'error': f'يجب تحديد عمود {field}'}, status=400)
-        
-        headers = excel_data['headers']
+
         rows = excel_data['data']
-        
-        print(f"[DEBUG] Edited data received: {edited_data is not None}")
+
+        results = {'added': 0, 'updated': 0, 'skipped': 0, 'errors': []}
+
+        def _safe_price(v):
+            try:
+                return Decimal(str(v).replace(',', '.').strip()) if v else None
+            except (InvalidOperation, ValueError):
+                return None
+
+        def _apply_fields(obj, item, is_new=False):
+            """تطبيق الحقول الاختيارية على كائن المنتج"""
+            from django.utils import timezone as tz
+            import re as _re
+
+            update = []
+            if item.get('name'):
+                obj.name = item['name']; update.append('name')
+            if item.get('image_url'):
+                obj.image_url = item['image_url']; update.append('image_url')
+            if item.get('price') not in (None, '', 'None'):
+                p = _safe_price(item['price'])
+                if p is not None:
+                    obj.price = p; update.append('price')
+            # الحاوية
+            container_name = item.get('container_name') or item.get('container')
+            if container_name:
+                cont, _ = Container.objects.get_or_create(
+                    name=container_name.strip(),
+                    defaults={'color': '#667eea'}
+                )
+                obj.container = cont; update.append('container')
+            # الموقع
+            loc_str = item.get('location')
+            if loc_str:
+                rn, cn = parse_location_string(str(loc_str))
+                if rn and cn:
+                    loc = get_or_create_location(rn, cn)
+                    if loc:
+                        obj.location = loc; update.append('location')
+            # تاريخ الإضافة (created_at محسوب تلقائياً عند الإنشاء؛ لا يمكن تعديله بعد الحفظ الأول)
+            # نخزنه في حقل ملاحظات أو نتجاهله إن لم يكن هناك حقل مخصص
+            return update
+
+        # ---- مسار: بيانات المعاينة المُرسَلة ----
         if edited_data:
-            print(f"[DEBUG] Edited data count: {len(edited_data)}")
-        
-        # معالجة البيانات
-        results = {
-            'added': 0,
-            'updated': 0,
-            'skipped': 0,
-            'errors': []
-        }
-        
-        from django.db import transaction
-        
-        # تتبع تكرار أرقام المنتجات لإضافة -1, -2, etc
-        product_number_counter = {}
-        
-        # إذا كانت هناك بيانات معدلة، استخدمها بدلاً من قراءة Excel مرة أخرى
-        has_name = 'name' in column_mapping and column_mapping['name'] is not None
-        has_category = 'category' in column_mapping and column_mapping['category'] is not None
-        if edited_data:
-            print("[DEBUG] Using edited data from preview")
             for item in edited_data:
-                # تخطي الصفوف التي ما زالت تحتوي على أخطاء
-                if item['status'] == 'error':
-                    results['errors'].append(f"الصف {item['row']}: {item['message']}")
+                if item.get('status') == 'error':
+                    results['errors'].append(f"الصف {item['row']}: {item.get('message','')}")
                     results['skipped'] += 1
                     continue
-                
                 try:
-                    product_number = item['final_number']
-                    location_str = item.get('location', None)
-                    # استخراج الاسم والفئة إذا طُلبا
-                    name_val = None
-                    category_val = None
-                    try:
-                        src_row = rows[item['row'] - 2]
-                        if has_name and column_mapping['name'] is not None:
-                            nc = src_row[column_mapping['name']]
-                            name_val = str(nc).strip() if nc is not None else None
-                        if has_category and column_mapping['category'] is not None:
-                            cc = src_row[column_mapping['category']]
-                            category_val = str(cc).strip() if cc is not None else None
-                    except Exception:
-                        pass
-                    
-                    # إجمالي الكمية مباشرة
-                    total_quantity = item['total_quantity']
-                    
-                    # معالجة الموقع
-                    location = None
-                    if location_str:
-                        # دعم صيغ متعددة مثل "R1C5" أو "R1-C5" أو "R1 C5"
-                        import re
-                        s = str(location_str).strip().upper()
-                        # تحويل أي فاصل غير حرفي إلى صيغة R..C..
-                        s = s.replace('-', ' ').replace('_', ' ')
-                        s = re.sub(r"\s+", "", s)
-                        match = re.match(r"R(\d+)C(\d+)", s)
-                        if match:
-                            row_num = int(match.group(1))
-                            col_num = int(match.group(2))
-                            warehouse = Warehouse.objects.first()
-                            if warehouse:
-                                location, _ = Location.objects.get_or_create(
-                                    warehouse=warehouse,
-                                    row=row_num,
-                                    column=col_num
-                                )
-                        else:
-                            # كاحتياط: إذا كانت القيمة رقمية فقط فتعامل معها كمُعرّف موقع
-                            if s.isdigit():
-                                try:
-                                    location = Location.objects.get(id=int(s))
-                                except Location.DoesNotExist:
-                                    location = None
-                    
-                    # التحقق من وجود المنتج
-                    existing_product = Product.objects.filter(product_number=product_number).first()
-                    
-                    if existing_product:
+                    pn             = item.get('product_number') or item.get('final_number', '')
+                    total_quantity = int(item.get('total_quantity', 0))
+
+                    existing = Product.objects.filter(product_number=pn).first()
+                    if existing:
                         if conflict_resolution == 'skip':
-                            results['skipped'] += 1
-                            continue
+                            results['skipped'] += 1; continue
                         elif conflict_resolution == 'update':
-                            existing_product.quantity += total_quantity
-                            if location:
-                                existing_product.location = location
-                            update_fields = ['quantity', 'location']
-                            if name_val:
-                                existing_product.name = name_val
-                                update_fields.append('name')
-                            if category_val:
-                                existing_product.category = category_val
-                                update_fields.append('category')
-                            existing_product.save(update_fields=update_fields)
-                            results['updated'] += 1
+                            existing.quantity += total_quantity
                         elif conflict_resolution == 'replace':
-                            existing_product.quantity = total_quantity
-                            if location:
-                                existing_product.location = location
-                            update_fields = ['quantity', 'location']
-                            if name_val:
-                                existing_product.name = name_val
-                                update_fields.append('name')
-                            if category_val:
-                                existing_product.category = category_val
-                                update_fields.append('category')
-                            existing_product.save(update_fields=update_fields)
-                            results['updated'] += 1
+                            existing.quantity = total_quantity
+                        extra = _apply_fields(existing, item)
+                        existing.save(update_fields=['quantity'] + extra + ['updated_at'])
+                        results['updated'] += 1
                     else:
-                        # إنشاء منتج جديد
-                        Product.objects.create(
-                            product_number=product_number,
-                            name=(name_val or product_number),
-                            category=(category_val or None),
+                        new_p = Product(
+                            product_number=pn,
+                            name=item.get('name') or pn,
                             quantity=total_quantity,
-                            location=location
                         )
+                        _apply_fields(new_p, item, is_new=True)
+                        new_p.save()
                         results['added'] += 1
-                        
                 except Exception as e:
-                    results['errors'].append(f"الصف {item['row']}: {str(e)}")
-            
-            return JsonResponse({
-                'success': True,
-                'results': results
-            })
-        
-        # إذا لم تكن هناك بيانات معدلة، استخدم القراءة المباشرة من Excel
-        has_final_model = 'final_model' in column_mapping and column_mapping['final_model'] is not None
-        
-        for row_idx, row in enumerate(rows, start=2):  # start=2 لأن الصف 1 هو العناوين
-            try:
-                # التحقق من أن الصف ليس فارغاً تماماً
-                if not any(cell for cell in row if cell is not None):
-                    continue
-                
-                # استخراج البيانات مع معالجة الأخطاء
+                    results['errors'].append(f"الصف {item.get('row','?')}: {str(e)}")
+
+        else:
+            # ---- مسار: قراءة مباشرة من Excel ----
+            def _cell(row, key):
                 try:
-                    product_number_cell = row[column_mapping['product_number']]
-                    product_number = str(product_number_cell).strip() if product_number_cell is not None else None
-                    
-                    # تخطي صفوف العناوين المكررة
-                    if product_number and product_number.upper() in ['MODEL', 'PRODUCT', 'رقم المنتج', 'PRODUCT NUMBER']:
+                    idx = column_mapping.get(key)
+                    if idx is None: return None
+                    v = row[idx]
+                    return str(v).strip() if v is not None else None
+                except (IndexError, KeyError):
+                    return None
+
+            for row_idx, row in enumerate(rows, start=2):
+                try:
+                    if not any(c for c in row if c is not None):
                         continue
-                except (IndexError, KeyError):
-                    product_number = None
-                
-                # استخراج FINAL_MODEL إذا كان موجوداً
-                final_model = None
-                if has_final_model:
+                    pn       = _cell(row, 'product_number')
+                    name_val = _cell(row, 'name')
+                    if not pn or not name_val:
+                        results['errors'].append(f'الصف {row_idx}: رقم المنتج أو الاسم فارغ'); continue
                     try:
-                        final_model_cell = row[column_mapping['final_model']]
-                        final_model = str(final_model_cell).strip() if final_model_cell is not None else None
-                        
-                        if final_model and final_model.upper() in ['FINAL MODEL', 'FINAL_MODEL', 'رقم المنتج النهائي']:
-                            continue
-                    except (IndexError, KeyError):
-                        final_model = None
-                
-                # إجمالي الكمية (مطلوب)
-                try:
-                    total_cell = row[column_mapping['total_quantity']]
-                    if total_cell and isinstance(total_cell, (int, float)):
-                        total_quantity = int(total_cell)
-                    elif total_cell and str(total_cell).replace('.', '').replace('-', '').isdigit():
-                        total_quantity = int(float(total_cell))
+                        tq_cell = row[column_mapping['total_quantity']]
+                        total_quantity = int(float(tq_cell)) if isinstance(tq_cell, (int, float)) else int(float(str(tq_cell)))
+                    except Exception:
+                        results['errors'].append(f'الصف {row_idx}: الكمية غير صالحة'); continue
+
+                    fake_item = {
+                        'product_number': pn, 'name': name_val,
+                        'image_url':      _cell(row, 'image'),
+                        'price':          _cell(row, 'price'),
+                        'container_name': _cell(row, 'container'),
+                        'location':       _cell(row, 'location'),
+                        'created_at':     _cell(row, 'created_at'),
+                    }
+                    existing = Product.objects.filter(product_number=pn).first()
+                    if existing:
+                        if conflict_resolution == 'skip':
+                            results['skipped'] += 1; continue
+                        elif conflict_resolution == 'update':
+                            existing.quantity += total_quantity
+                        elif conflict_resolution == 'replace':
+                            existing.quantity = total_quantity
+                        extra = _apply_fields(existing, fake_item)
+                        existing.save(update_fields=['quantity'] + extra + ['updated_at'])
+                        results['updated'] += 1
                     else:
-                        total_quantity = None
-                except (IndexError, KeyError, ValueError):
-                    total_quantity = None
-                
-                # حقول اختيارية
-                location_str = None
-                try:
-                    if 'location' in column_mapping and column_mapping['location'] is not None:
-                        loc_cell = row[column_mapping['location']]
-                        location_str = str(loc_cell).strip() if loc_cell else None
-                except (IndexError, KeyError):
-                    location_str = None
-                
-                # حقول اختيارية: الاسم والفئة
-                name_val = None
-                category_val = None
-                try:
-                    if 'name' in column_mapping and column_mapping['name'] is not None:
-                        nc = row[column_mapping['name']]
-                        name_val = str(nc).strip() if nc is not None else None
-                except Exception:
-                    name_val = None
-                try:
-                    if 'category' in column_mapping and column_mapping['category'] is not None:
-                        cc = row[column_mapping['category']]
-                        category_val = str(cc).strip() if cc is not None else None
-                except Exception:
-                    category_val = None
-                
-                # تحديد رقم المنتج النهائي
-                if has_final_model and final_model:
-                    final_product_number = final_model
-                else:
-                    final_product_number = product_number
-                
-                # التحقق من البيانات
-                if not final_product_number or total_quantity is None:
-                    results['errors'].append(f'الصف {row_idx}: بيانات ناقصة (رقم المنتج أو الإجمالي)')
-                    continue
-                
-                # البحث عن الموقع
-                location = None
-                if location_str:
-                    # تحليل الموقع (مثل R1C5)
-                    import re
-                    match = re.match(r'R(\d+)C(\d+)', location_str.upper())
-                    if match:
-                        row_num = int(match.group(1))
-                        col_num = int(match.group(2))
-                        
-                        # البحث عن الموقع أو إنشاءه
-                        warehouse = Warehouse.objects.first()
-                        if warehouse:
-                            location, _ = Location.objects.get_or_create(
-                                warehouse=warehouse,
-                                row=row_num,
-                                column=col_num
-                            )
-                
-                # التحقق من وجود المنتج
-                existing_product = Product.objects.filter(product_number=final_product_number).first()
-                
-                if existing_product:
-                    # المنتج موجود - معالجة التعارض
-                    if conflict_resolution == 'skip':
-                        results['skipped'] += 1
-                    elif conflict_resolution == 'update':
-                        # تحديث الكمية (إضافة)
-                        existing_product.quantity += total_quantity
-                        if location:
-                            existing_product.location = location
-                        if name_val:
-                            existing_product.name = name_val
-                        if category_val:
-                            existing_product.category = category_val
-                        existing_product.save()
-                        results['updated'] += 1
-                    elif conflict_resolution == 'replace':
-                        # استبدال الكمية
-                        existing_product.quantity = total_quantity
-                        if location:
-                            existing_product.location = location
-                        if name_val:
-                            existing_product.name = name_val
-                        if category_val:
-                            existing_product.category = category_val
-                        existing_product.save()
-                        results['updated'] += 1
-                else:
-                    # منتج جديد
-                    Product.objects.create(
-                        product_number=final_product_number,
-                        name=(name_val or final_product_number),
-                        category=(category_val or None),
-                        quantity=total_quantity,
-                        location=location
-                    )
-                    results['added'] += 1
-                    
-            except Exception as e:
-                results['errors'].append(f'الصف {row_idx}: {str(e)}')
-        
-        # مسح البيانات من الجلسة
+                        new_p = Product(product_number=pn, name=name_val, quantity=total_quantity)
+                        _apply_fields(new_p, fake_item, is_new=True)
+                        new_p.save()
+                        results['added'] += 1
+                except Exception as e:
+                    results['errors'].append(f'الصف {row_idx}: {str(e)}')
+
         if 'excel_data' in request.session:
             del request.session['excel_data']
-        
-        return JsonResponse({
-            'success': True,
-            'results': results
-        })
-        
+
+        return JsonResponse({'success': True, 'results': results})
+
     except Exception as e:
         return JsonResponse({'error': f'خطأ في معالجة البيانات: {str(e)}'}, status=500)
 
@@ -5402,6 +5506,68 @@ def container_delete(request, container_id):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+@staff_required
+@require_http_methods(["POST"])
+def container_update(request, container_id):
+    """تحديث حاوية (الاسم، الوصف، اللون)"""
+    try:
+        container = get_object_or_404(Container, id=container_id)
+        
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        color = request.POST.get('color', '#667eea').strip()
+        
+        if not name:
+            return JsonResponse({
+                'success': False,
+                'error': 'اسم الحاوية مطلوب'
+            }, status=400)
+        
+        # التحقق من عدم تكرار الاسم مع حاوية أخرى (غير الحالية)
+        if Container.objects.filter(name=name).exclude(id=container_id).exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'يوجد حاوية أخرى بنفس الاسم'
+            }, status=400)
+        
+        if not color:
+            color = '#667eea'
+        if len(color) == 4 and color.startswith('#'):
+            # توسيع #abc إلى #aabbcc
+            color = '#' + ''.join(c * 2 for c in color[1:])
+        
+        container.name = name
+        container.description = description or None
+        container.color = color
+        container.save(update_fields=['name', 'description', 'color'])
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'تم تحديث الحاوية بنجاح',
+            'container': {
+                'id': container.id,
+                'name': container.name,
+                'description': container.description or '',
+                'color': container.color
+            }
+        })
+        
+    except Container.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'الحاوية غير موجودة'
+        }, status=404)
+    except Exception as e:
+        logger.error(f'Error updating container: {str(e)}')
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
 def _load_backup_data(raw_bytes, filename):
     data = None
     parse_info = {'source': 'raw', 'encoding': None, 'fixes': []}

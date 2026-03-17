@@ -86,6 +86,15 @@
         background: #dc2626;
     }
     
+    .btn-edit {
+        background: #f59e0b;
+        color: white;
+    }
+    
+    .btn-edit:hover {
+        background: #d97706;
+    }
+    
     .btn-success {
         background: #10b981;
         color: white;
@@ -143,6 +152,78 @@
         color: #6b7280;
         font-size: 0.9rem;
     }
+    
+    /* نافذة تعديل الحاوية */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-overlay.show {
+        display: flex;
+    }
+    .modal-box {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        min-width: 360px;
+        max-width: 90vw;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal-box h3 {
+        margin: 0 0 20px 0;
+        font-size: 1.25rem;
+        color: #1f2937;
+    }
+    .modal-box label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+        color: #4b5563;
+    }
+    .modal-box input[type="text"],
+    .modal-box input[type="color"],
+    .modal-box textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 1rem;
+        margin-bottom: 16px;
+    }
+    .modal-box textarea {
+        min-height: 80px;
+        resize: vertical;
+    }
+    .modal-box .color-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    .modal-box .color-row input[type="text"] {
+        margin-bottom: 0;
+        flex: 1;
+    }
+    .modal-box input[type="color"] {
+        width: 50px;
+        height: 42px;
+        padding: 4px;
+        cursor: pointer;
+    }
+    .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 20px;
+    }
 </style>
 
 <div class="page-header">
@@ -187,6 +268,13 @@
                         <a href="{% url 'inventory_app:products_list' %}?container={{ container.id }}" class="btn btn-primary">
                             👁️ عرض المنتجات
                         </a>
+                        <button type="button" class="btn btn-edit edit-container-btn"
+                                data-id="{{ container.id }}"
+                                data-name="{{ container.name }}"
+                                data-description="{{ container.description|default:''|escapejs }}"
+                                data-color="{{ container.color|default:'#667eea' }}">
+                            ✏️ تعديل
+                        </button>
                         <button class="btn btn-danger delete-container-btn" data-id="{{ container.id }}" data-name="{{ container.name }}">
                             🗑️ حذف
                         </button>
@@ -216,6 +304,29 @@
         </button>
     </div>
 {% endif %}
+
+<!-- نافذة تعديل الحاوية -->
+<div id="editContainerModal" class="modal-overlay">
+    <div class="modal-box">
+        <h3>✏️ تعديل الحاوية</h3>
+        <form id="editContainerForm">
+            <input type="hidden" name="container_id" id="editContainerId" value="">
+            <label for="editContainerName">الاسم</label>
+            <input type="text" id="editContainerName" name="name" required placeholder="اسم الحاوية">
+            <label for="editContainerDescription">الوصف (اختياري)</label>
+            <textarea id="editContainerDescription" name="description" placeholder="وصف الحاوية"></textarea>
+            <label>اللون</label>
+            <div class="color-row">
+                <input type="color" id="editContainerColorPicker" value="#667eea" title="اختر اللون">
+                <input type="text" id="editContainerColor" name="color" value="#667eea" placeholder="#667eea">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn" onclick="closeEditModal()" style="background: #e5e7eb; color: #374151;">إلغاء</button>
+                <button type="submit" class="btn btn-edit">💾 حفظ التعديلات</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 {% csrf_token %}
 
@@ -284,6 +395,63 @@
             alert('حدث خطأ أثناء حذف الحاوية');
         });
     }
+    // نافذة تعديل الحاوية
+    function openEditModal(containerId, name, description, color) {
+        document.getElementById('editContainerId').value = containerId;
+        document.getElementById('editContainerName').value = name || '';
+        document.getElementById('editContainerDescription').value = description || '';
+        var c = (color && color.trim()) ? color.trim() : '#667eea';
+        document.getElementById('editContainerColor').value = c;
+        document.getElementById('editContainerColorPicker').value = c;
+        document.getElementById('editContainerModal').classList.add('show');
+    }
+    
+    function closeEditModal() {
+        document.getElementById('editContainerModal').classList.remove('show');
+    }
+    
+    document.getElementById('editContainerModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditModal();
+    });
+    
+    document.getElementById('editContainerColorPicker').addEventListener('input', function() {
+        document.getElementById('editContainerColor').value = this.value;
+    });
+    document.getElementById('editContainerColor').addEventListener('input', function() {
+        var v = this.value.trim();
+        if (/^#[0-9A-Fa-f]{3,6}$/.test(v)) document.getElementById('editContainerColorPicker').value = v;
+    });
+    
+    document.getElementById('editContainerForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var id = document.getElementById('editContainerId').value;
+        var form = this;
+        var fd = new FormData();
+        fd.append('name', document.getElementById('editContainerName').value.trim());
+        fd.append('description', document.getElementById('editContainerDescription').value.trim());
+        fd.append('color', document.getElementById('editContainerColor').value.trim() || '#667eea');
+        fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        
+        fetch('/api/container/' + id + '/update/', {
+            method: 'POST',
+            body: fd
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                alert('✅ ' + data.message);
+                closeEditModal();
+                location.reload();
+            } else {
+                alert('❌ خطأ: ' + (data.error || 'حدث خطأ'));
+            }
+        })
+        .catch(function(err) {
+            console.error(err);
+            alert('حدث خطأ أثناء حفظ التعديلات');
+        });
+    });
+    
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.container-card').forEach(function(card) {
             var color = card.getAttribute('data-color');
@@ -300,6 +468,15 @@
                 var id = this.getAttribute('data-id');
                 var name = this.getAttribute('data-name');
                 deleteContainer(id, name);
+            });
+        });
+        document.querySelectorAll('.edit-container-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var id = this.getAttribute('data-id');
+                var name = this.getAttribute('data-name');
+                var description = this.getAttribute('data-description') || '';
+                var color = this.getAttribute('data-color') || '#667eea';
+                openEditModal(id, name, description, color);
             });
         });
     });

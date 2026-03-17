@@ -426,7 +426,7 @@
                     </div>
                     <textarea 
                         id="product-numbers" 
-                        placeholder="أمثلة:&#10;#200:20&#10;A400:5&#10;980:12&#10;(يدعم أرقام/حروف/رموز مع كمية بعد :)" 
+                        placeholder="أمثلة:&#10;#200*20&#10;A400*5&#10;980*12&#10;(يدعم أرقام/حروف/رموز مع كمية بعد *)" 
                         rows="10"
                         autofocus
                     ></textarea>
@@ -434,11 +434,11 @@
                         آخر حفظ: <span id="last-saved-time"></span>
                     </div>
                     <small class="hint">
-                        <strong>القاعدة:</strong> أي معرف منتج (أرقام/حروف/رموز) مع إمكانية تحديد الكمية باستخدام <code>:</code><br>
+                        <strong>القاعدة:</strong> أي معرف منتج (أرقام/حروف/رموز) مع إمكانية تحديد الكمية باستخدام <code>*</code><br>
                         <strong>أمثلة:</strong><br>
-                        • <code>#200:20</code><br>
-                        • <code>A400:5</code><br>
-                        • <code>980:12</code>
+                        • <code>#200*20</code><br>
+                        • <code>A400*5</code><br>
+                        • <code>980*12</code>
                     </small>
                 </div>
                 <div class="input-group">
@@ -736,7 +736,7 @@
     <script src="{% static 'js/notifications.js' %}?v=2.3"></script>
     <script src="{% static 'js/auto_refresh.js' %}?v=2.3"></script>
     <script src="{% static 'js/quick_search.js' %}?v=2.3"></script>
-    <script src="{% static 'js/main.js' %}?v=2.3"></script>
+    <script src="{% static 'js/main.js' %}?v=2.6"></script>
     
     <script>
         // عرض إشعارات عند تحميل الصفحة (للاختبار)

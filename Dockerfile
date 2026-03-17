@@ -27,14 +27,15 @@ RUN playwright install-deps chromium
 # Copy project
 COPY . /app/
 
-# Create media directory structure and set permissions
-RUN mkdir -p /app/media/products && chmod -R 755 /app/media
+# Create directories and set permissions
+RUN mkdir -p /app/media/products /app/logs && chmod -R 755 /app/media /app/logs
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
+# Static files collected at runtime via entrypoint
 
-# Expose port
+# Entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 EXPOSE 8000
 
-# Run gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "inventory_project.wsgi:application"]
+ENTRYPOINT ["/app/entrypoint.sh"]
