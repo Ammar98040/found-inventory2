@@ -1,37 +1,34 @@
-# نشر المشروع على Dokploy
+# دليل النشر على VPS (Dokploy)
 
-## المتطلبات
-- حساب Dokploy على VPS
-- قاعدة بيانات PostgreSQL (من Dokploy أو خارجية)
+## الخطوات
 
-## خطوات النشر
+### 1. إنشاء ملف ZIP للنشر
+- تأكد أن ملف `.env.deploy` موجود في المشروع
+- اضغط مجلد المشروع كاملاً بصيغة ZIP
+- أو استخدم Git: `git archive -o deploy.zip HEAD`
 
-### 1. إنشاء قاعدة بيانات PostgreSQL
-في Dokploy: Applications > Add Database > PostgreSQL
+### 2. رفع على Dokploy
+- ارفع ملف ZIP
+- تأكد أن **Port** مضبوط على **8000**
+- أضف النطاق: `inventory.qrtably.com`
+- تأكد أن النطاق يشير إلى IP السيرفر (31.97.197.188)
 
-### 2. إضافة التطبيق
-- Applications > Add Application > Docker Compose أو Dockerfile
-- ربط المستودع: `https://github.com/Ammar98040/found-inventory2`
-
-### 3. متغيرات البيئة (Environment Variables)
-```
-SECRET_KEY=your-secret-key
-DEBUG=False
-ALLOWED_HOSTS=your-domain.com,www.your-domain.com
-USE_SQLITE=False
-DB_NAME=inventory_db
-DB_USER=inventory_user
-DB_PASSWORD=your-password
-DB_HOST=postgres
-DB_PORT=5432
-CSRF_TRUSTED_ORIGINS=https://your-domain.com,https://www.your-domain.com
-```
-
-### 4. استعادة البيانات
-بعد النشر، استورد النسخة الاحتياطية:
+### 3. إنشاء مدير النظام (بعد أول تشغيل)
+اتصل بالحاوية أو استخدم Terminal في Dokploy:
 ```bash
-psql -U inventory_user -d inventory_db -h postgres -f full_db_backup.sql
+python manage.py createsuperuser
 ```
 
-### 5. رفع الصور
-انسخ مجلد `media/products/` إلى السيرفر أو استخدم النسخة الاحتياطية ZIP من النظام.
+### 4. إعدادات .env.deploy الحالية
+- DEBUG=False
+- USE_FILE_LOGGING=False (لتقليل أخطاء "Too many open files")
+- SQLite مفعّل
+- النطاقات: inventory.qrtably.com + IP السيرفر
+
+### 5. إذا ظهر خطأ "Too many open files"
+نفّذ على السيرفر عبر SSH:
+```bash
+echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
+echo fs.inotify.max_user_instances=512 | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```

@@ -33,6 +33,9 @@ logs/
 .env
 .env.local
 *.env
+.env.deploy
+.env.deploy.*
+!.env.deploy.example
 
 # Database Backups (large files)
 *.sql

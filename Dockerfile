@@ -34,6 +34,7 @@ RUN mkdir -p /app/media/products /app/logs && chmod -R 755 /app/media /app/logs
 
 # Entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000

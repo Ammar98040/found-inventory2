@@ -17,8 +17,9 @@ coverage.xml
 *.log
 .git
 .gitignore
+.env
+.env.deploy
+!.env.deploy.example
 .idea
 .vscode
-media/
 staticfiles/
-*.sqlite3

@@ -89,7 +89,7 @@ WSGI_APPLICATION = 'inventory_project.wsgi.application'
 
 # قاعدة البيانات
 # دعم التبديل السهل بين PostgreSQL و SQLite عبر متغير USE_SQLITE
-USE_SQLITE = config('USE_SQLITE', default=False, cast=bool)
+USE_SQLITE = config('USE_SQLITE', default=True, cast=bool)
 
 if USE_SQLITE:
     DATABASES = {
@@ -236,10 +236,17 @@ RATELIMIT_USE_CACHE = 'default'
 
 # ========== Logging Configuration ==========
 
-# التأكد من وجود مجلد السجلات
+# في Docker/الإنتاج: استخدام console فقط لتقليل "Too many open files"
+USE_FILE_LOGGING = config('USE_FILE_LOGGING', default=DEBUG, cast=bool)
+
 LOGS_DIR = BASE_DIR / 'logs'
-if not LOGS_DIR.exists():
+if USE_FILE_LOGGING and not LOGS_DIR.exists():
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+_file_handlers = ['file'] if USE_FILE_LOGGING else []
+_root_handlers = ['console', 'file'] if USE_FILE_LOGGING else ['console']
+_sec_handlers = ['security_file', 'mail_admins'] if USE_FILE_LOGGING else ['console', 'mail_admins']
+_err_handlers = ['error_file', 'mail_admins'] if USE_FILE_LOGGING else ['console', 'mail_admins']
 
 LOGGING = {
     'version': 1,
@@ -273,7 +280,6 @@ LOGGING = {
             'level': 'INFO' if DEBUG else 'WARNING',
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
-            'filters': ['require_debug_true'],
         },
         'file': {
             'level': 'INFO',
@@ -308,33 +314,33 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'] + _file_handlers,
             'level': 'INFO',
             'propagate': False,
         },
         'django.security': {
-            'handlers': ['security_file', 'mail_admins'],
+            'handlers': _sec_handlers,
             'level': 'WARNING',
             'propagate': False,
         },
         'django.request': {
-            'handlers': ['error_file', 'mail_admins'],
+            'handlers': _err_handlers,
             'level': 'ERROR',
             'propagate': False,
         },
         'inventory_app': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'] + _file_handlers,
             'level': 'INFO' if DEBUG else 'WARNING',
             'propagate': False,
         },
         'inventory_app.security': {
-            'handlers': ['security_file', 'mail_admins'],
+            'handlers': _sec_handlers,
             'level': 'WARNING',
             'propagate': False,
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': _root_handlers,
         'level': 'INFO' if DEBUG else 'WARNING',
     },
 }
